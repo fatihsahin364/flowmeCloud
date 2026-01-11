@@ -1,0 +1,17 @@
+{
+  "name": "confluence-macro-custom-ui",
+  "version": "1.1.17",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "@babel/preset-react": "^7.25.9",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react-hooks": "^4.6.0"
+  },
+  "dependencies": {
+    "@forge/api": "^6.4.3",
+    "@forge/react": "^11.2.0",
+    "@forge/resolver": "1.7.1"
+  }
+}

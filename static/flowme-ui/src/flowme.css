@@ -1,0 +1,286 @@
+.flowme-diagram-wrapper {
+  margin: 0;
+  padding: 0;
+}
+
+.flowme-diagram-box {
+  position: relative;
+  max-width: 960px;
+  border: 0;
+  border-radius: 4px;
+  background: #fafbfc;
+  overflow: hidden;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.flowme-diagram-wrapper.flowme-auto-width .flowme-diagram-box {
+  display: inline-block;
+  width: auto;
+  max-width: 960px;
+}
+
+.flowme-diagram-wrapper.flowme-has-border .flowme-diagram-box {
+  border: 1px solid #dfe1e6;
+}
+
+.flowme-diagram-wrapper.flowme-has-border .flowme-diagram-box:hover {
+  border-color: #4c9aff;
+  box-shadow: 0 4px 10px rgba(9, 30, 66, 0.15);
+}
+
+.flowme-diagram-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 6px;
+  background: #ffffff;
+  border: 1px solid #dfe1e6;
+  border-bottom-color: #c1c7d0;
+  box-shadow: inset 0 -1px 0 rgba(9, 30, 66, 0.06);
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  z-index: 2;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.flowme-diagram-box:hover .flowme-diagram-toolbar {
+  opacity: 1;
+  visibility: visible;
+}
+
+.flowme-diagram-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.flowme-diagram-toolbar-center {
+  min-width: 0;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 140px);
+  text-align: center;
+  pointer-events: none;
+}
+
+.flowme-diagram-toolbar-right {
+  min-width: 0;
+  margin-left: auto;
+}
+
+.flowme-diagram-title {
+  display: block;
+  font-weight: 600;
+  color: #172b4d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flowme-diagram-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.flowme-editor-hover-toolbar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #b3bac5;
+  box-shadow: 0 10px 28px rgba(9, 30, 66, 0.25);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 3;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+  width: max-content;
+  min-width: 360px;
+  flex-wrap: wrap;
+}
+
+.flowme-diagram-box:hover .flowme-editor-hover-toolbar {
+  opacity: 1;
+  visibility: visible;
+}
+
+.flowme-editor-hover-toolbar .aui-button {
+  background: #f4f5f7;
+  border: 1px solid #dfe1e6;
+  color: #172b4d;
+  height: 32px;
+  line-height: 30px;
+  border-radius: 4px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.flowme-editor-hover-toolbar .aui-button:hover {
+  background: #ebecf0;
+}
+
+.flowme-editor-hover-toolbar .aui-button:active {
+  background: #dfe1e6;
+}
+
+.flowme-editor-hover-toolbar .aui-button.aui-button-primary {
+  background: #0052cc;
+  border-color: #0052cc;
+  color: #fff;
+}
+
+.flowme-editor-hover-toolbar .aui-button.aui-button-primary:hover {
+  background: #0747a6;
+  border-color: #0747a6;
+}
+
+.flowme-editor-hover-toolbar .flowme-editor-hover-version-select {
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 32px;
+  line-height: 30px;
+  border: 1px solid #dfe1e6;
+  border-radius: 4px;
+  background: #fff;
+  color: #172b4d;
+  padding: 0 8px;
+  min-width: 140px;
+}
+
+.flowme-editor-hover-width-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  margin: 0 6px;
+  border: 1px solid #dfe1e6;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.flowme-editor-hover-width-btn.aui-button {
+  margin: 0;
+  padding: 0 8px;
+  min-width: 34px;
+  height: 32px;
+  line-height: 30px;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.flowme-width-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+.flowme-width-icon-restore {
+  background-image: url('./assets/width-restore.svg');
+}
+
+.flowme-width-icon-max {
+  background-image: url('./assets/width-max.svg');
+}
+
+.flowme-width-icon-mid {
+  background-image: url('./assets/width-mid.svg');
+}
+
+.flowme-width-icon-min {
+  background-image: url('./assets/width-min.svg');
+}
+
+.flowme-editor-hover-width-btn + .flowme-editor-hover-width-btn {
+  border-left: 1px solid #dfe1e6;
+}
+
+.flowme-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  min-width: 32px;
+  padding: 0;
+  border: 1px solid #dfe1e6;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.75);
+  color: #172b4d;
+  cursor: pointer;
+}
+
+.flowme-zoom-btn span[aria-hidden="true"] {
+  display: inline-block;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.flowme-zoom-btn:hover {
+  background: #ffffff;
+  border-color: #4c9aff;
+}
+
+.flowme-diagram-preview {
+  position: relative;
+  overflow: visible;
+  min-height: 120px;
+  background: #ffffff;
+}
+
+.flowme-editor-mode .flowme-diagram-box {
+  overflow: visible;
+}
+
+.flowme-editor-mode .flowme-diagram-preview {
+  overflow: hidden;
+}
+
+.flowme-diagram-preview img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  transform-origin: top left;
+  transition: transform 120ms ease;
+}
+
+.flowme-diagram-wrapper.flowme-has-width .flowme-diagram-preview img {
+  width: 100%;
+}
+
+.flowme-diagram-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  color: #6b778c;
+  font-style: italic;
+  background: #fafbfc;
+}
+
+.flowme-diagram-box:hover .flowme-diagram-preview-empty {
+  padding-top: 44px;
+}

@@ -1,0 +1,59 @@
+modules:
+  macro:
+    - key: flowmecloud-diagram
+      resource: flowme-ui
+      resolver:
+        function: resolver
+      title: FlowMe Diagram
+      description: Embed and edit FlowMe diagrams
+      config:
+        openOnInsert: true
+        resource: flowme-ui
+  confluence:globalPage:
+    - key: flowmecloud-settings
+      title: FlowMe Cloud Settings
+      route: flowme-cloud-settings
+      resource: flowme-ui
+      resolver:
+        function: resolver
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: page-updated-handler
+      handler: index.pageUpdatedHandler
+  trigger:
+    - key: flowme-page-updated
+      function: page-updated-handler
+      events:
+        - avi:confluence:updated:page
+        - avi:confluence:snapshotted:page
+resources:
+  - key: flowme-ui
+    path: static/flowme-ui/build
+permissions:
+  scopes:
+    - storage:app
+    - read:content:confluence
+    - write:content:confluence
+    - read:confluence-content.summary
+    - read:page:confluence
+    - read:space:confluence
+    - read:confluence-user
+    - read:attachment:confluence
+    - write:attachment:confluence
+    - delete:attachment:confluence
+    - write:confluence-file
+
+  external:
+    fetch:
+      backend:
+        - https://*.atlassian.net
+        - https://embed.diagrams.net
+    frames:
+      - https://embed.diagrams.net
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/ab6a91ab-0f13-41ea-ac33-5fb6dedc1216
