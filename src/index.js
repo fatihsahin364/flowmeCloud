@@ -252,6 +252,23 @@ function decodeHtmlEntities(value) {
     .replace(/&#39;/g, "'");
 }
 
+async function hasDraftForPage(pageId) {
+  try {
+    const response = await api
+      .asApp()
+      .requestConfluence(route`/wiki/rest/api/content/${pageId}?status=draft&expand=body.storage`);
+    if (response.status === 404) {
+      return false;
+    }
+    if (!response.ok) {
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function getFlowmeDiagramNamesFromPage(pageId) {
   const data = await requestConfluenceJson(
     route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
@@ -265,9 +282,11 @@ async function getFlowmeDiagramNamesFromPage(pageId) {
     html = String(data.body.value);
   }
   const names = new Set();
+  let hasMacro = false;
   const macroRegex = /<ac:structured-macro[^>]*ac:name="flowmecloud-diagram"[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi;
   let match;
   while ((match = macroRegex.exec(html))) {
+    hasMacro = true;
     const block = match[1];
     const paramRegex = /<ac:parameter[^>]*ac:name="diagramName"[^>]*>([\s\S]*?)<\/ac:parameter>/i;
     const paramMatch = paramRegex.exec(block);
@@ -276,11 +295,22 @@ async function getFlowmeDiagramNamesFromPage(pageId) {
       if (decoded) names.add(decoded);
     }
   }
-  return names;
+  return { names, hasMacro };
 }
 
 async function cleanupOrphanAttachments(pageId) {
-  const keepNames = await getFlowmeDiagramNamesFromPage(pageId);
+  const { names: keepNames, hasMacro } = await getFlowmeDiagramNamesFromPage(pageId);
+  if (!hasMacro) {
+    const hasDraft = await hasDraftForPage(pageId);
+    if (hasDraft) {
+      console.log('FlowMe cleanup skipped: draft exists', { pageId });
+      return { deleted: 0, kept: 0, total: 0, candidates: 0 };
+    }
+  }
+  if (hasMacro && keepNames.size === 0) {
+    console.log('FlowMe cleanup skipped: macro exists but no diagramName set', { pageId });
+    return { deleted: 0, kept: 0, total: 0, candidates: 0 };
+  }
   const attachments = await listAttachmentsV2(pageId, 'app');
   let candidates = 0;
   let deleted = 0;
@@ -297,6 +327,9 @@ async function cleanupOrphanAttachments(pageId) {
     if (keepNames.has(diagramName)) {
       kept += 1;
       continue;
+    }
+    if (hasMacro && keepNames.size > 0) {
+      // Macros exist but this diagram name isn't referenced anymore.
     }
     if (attachment.id) {
       await deleteAttachmentById(String(attachment.id), 'app');
