@@ -451,53 +451,49 @@ resolver.define('saveDiagram', async (req) => {
 
     const actor = await getActorInfo();
 
-    if (createOnly) {
-      const existingXml = await getAttachmentByName(
-        pageId,
-        `${diagramName}${DRAWIO_XML_SUFFIX}`,
-        'app'
-      );
-      const existingSvg = await getAttachmentByName(
-        pageId,
-        `${diagramName}${DRAWIO_SVG_SUFFIX}`,
-        'app'
-      );
-      if (existingXml || existingSvg) {
-        return { ok: false, error: 'Diagram already exists.', status: 409 };
-      }
+    const [existingXml, existingSvg] = await Promise.all([
+      xml
+        ? getAttachmentByName(pageId, `${diagramName}${DRAWIO_XML_SUFFIX}`, 'app')
+        : Promise.resolve(null),
+      svg
+        ? getAttachmentByName(pageId, `${diagramName}${DRAWIO_SVG_SUFFIX}`, 'app')
+        : Promise.resolve(null),
+    ]);
+
+    if (createOnly && (existingXml || existingSvg)) {
+      return { ok: false, error: 'Diagram already exists.', status: 409 };
     }
 
+    const uploads = [];
     if (xml) {
-      const existingXml = await getAttachmentByName(
-        pageId,
-        `${diagramName}${DRAWIO_XML_SUFFIX}`,
-        'app'
-      );
-      await uploadAttachment(
-        pageId,
-        `${diagramName}${DRAWIO_XML_SUFFIX}`,
-        'application/xml',
-        xml,
-        'app',
-        existingXml && existingXml.id ? String(existingXml.id) : undefined,
-        buildFlowmeComment(diagramName, actor)
+      uploads.push(
+        uploadAttachment(
+          pageId,
+          `${diagramName}${DRAWIO_XML_SUFFIX}`,
+          'application/xml',
+          xml,
+          'app',
+          existingXml && existingXml.id ? String(existingXml.id) : undefined,
+          buildFlowmeComment(diagramName, actor)
+        )
       );
     }
     if (svg) {
-      const existingSvg = await getAttachmentByName(
-        pageId,
-        `${diagramName}${DRAWIO_SVG_SUFFIX}`,
-        'app'
+      uploads.push(
+        uploadAttachment(
+          pageId,
+          `${diagramName}${DRAWIO_SVG_SUFFIX}`,
+          'image/svg+xml',
+          svg,
+          'app',
+          existingSvg && existingSvg.id ? String(existingSvg.id) : undefined,
+          buildFlowmeComment(diagramName, actor)
+        )
       );
-      await uploadAttachment(
-        pageId,
-        `${diagramName}${DRAWIO_SVG_SUFFIX}`,
-        'image/svg+xml',
-        svg,
-        'app',
-        existingSvg && existingSvg.id ? String(existingSvg.id) : undefined,
-        buildFlowmeComment(diagramName, actor)
-      );
+    }
+
+    if (uploads.length) {
+      await Promise.all(uploads);
     }
 
     return { ok: true };
