@@ -69,6 +69,34 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
     refreshPreview(diagram.diagramName, selectedVersion);
   }, [pageId, diagram.diagramName, isEditing, selectedVersion]);
 
+  const updateBaseSizeFromImage = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    let width = img.naturalWidth || img.width || 0;
+    let height = img.naturalHeight || img.height || 0;
+    if (!width || !height) {
+      const rect = img.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+    }
+    if (width && height) {
+      setBaseSize({ width, height });
+    }
+  };
+
+  useEffect(() => {
+    if (!svgUrl) return;
+    if (!imgRef.current) return;
+    const img = imgRef.current;
+    if (img.complete) {
+      updateBaseSizeFromImage();
+      return;
+    }
+    const onLoad = () => updateBaseSizeFromImage();
+    img.addEventListener('load', onLoad);
+    return () => img.removeEventListener('load', onLoad);
+  }, [svgUrl, diagram.width]);
+
 
   const refreshPreview = async (name, version) => {
     if (!pageId || !name) return;
@@ -148,7 +176,6 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
   };
 
   const hasBorder = Boolean(diagram.border);
-  const widthStyle = diagram.width ? { maxWidth: `${diagram.width}px` } : {};
   const wrapperClass = useMemo(() => {
     const classes = ['flowme-diagram-wrapper'];
     classes.push(diagram.width ? 'flowme-has-width' : 'flowme-auto-width');
@@ -159,64 +186,35 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
   const showPreviewToolbar = !isEditing && Boolean(diagram.diagramName);
   const zoomIn = () => setZoom((value) => Math.min(2, Math.round((value + 0.1) * 10) / 10));
   const zoomOut = () => setZoom((value) => Math.max(0.5, Math.round((value - 0.1) * 10) / 10));
-  const scaledWidth = baseSize.width ? Math.round(baseSize.width * zoom) : 0;
-  const scaledHeight = baseSize.height ? Math.round(baseSize.height * zoom) : 0;
+  const previewSize = (() => {
+    const naturalWidth = baseSize.width || 0;
+    const naturalHeight = baseSize.height || 0;
+    if (!naturalWidth || !naturalHeight) {
+      return { width: 0, height: 0 };
+    }
+    const configuredWidth = diagram.width ? parseInt(diagram.width, 10) : 0;
+    if (Number.isFinite(configuredWidth) && configuredWidth > 0) {
+      const width = Math.round(configuredWidth * zoom);
+      const height = Math.round((naturalHeight * width) / naturalWidth);
+      return { width, height };
+    }
+    return {
+      width: Math.round(naturalWidth * zoom),
+      height: Math.round(naturalHeight * zoom),
+    };
+  })();
   const previewStyle =
-    scaledWidth && scaledHeight ? { width: `${scaledWidth}px`, height: `${scaledHeight}px` } : {};
-
-  const computeWidthPresetPx = (preset) => {
-    let available = 0;
-    if (boxRef.current && boxRef.current.parentElement) {
-      available = Math.round(boxRef.current.parentElement.getBoundingClientRect().width || 0);
+    previewSize.width && previewSize.height
+      ? { width: `${previewSize.width}px`, height: `${previewSize.height}px` }
+      : {};
+  const widthStyle = (() => {
+    const configuredWidth = diagram.width ? parseInt(diagram.width, 10) : 0;
+    if (Number.isFinite(configuredWidth) && configuredWidth > 0) {
+      const scaledWidth = Math.round(configuredWidth * zoom);
+      return { maxWidth: `${scaledWidth}px` };
     }
-    if (!available && boxRef.current) {
-      available = Math.round(boxRef.current.getBoundingClientRect().width || 0);
-    }
-    if (!available && typeof window !== 'undefined') {
-      available = Math.round(window.innerWidth || 0);
-    }
-    const maxAllowed = Math.max(320, available - 24);
-    let target = 300;
-    if (preset === 'min') {
-      target = 300;
-    } else if (preset === 'mid') {
-      target = Math.round(maxAllowed * 0.5);
-    } else {
-      target = Math.round(maxAllowed * 0.98);
-    }
-    const minPx = 220;
-    const maxPx = 2600;
-    return Math.max(minPx, Math.min(maxPx, target));
-  };
-
-  const updateMacroWidth = async (nextWidth) => {
-    const nextDiagram = { ...diagram, width: nextWidth };
-    setDiagram(nextDiagram);
-    if (!isEditing || !view || typeof view.submit !== 'function') {
-      return;
-    }
-    try {
-      await view.submit({
-        config: {
-          diagramName: nextDiagram.diagramName,
-          width: nextDiagram.width,
-          border: nextDiagram.border,
-        },
-        keepEditing: true,
-      });
-    } catch (e) {
-      setMacroStatus('Width updated locally. Open macro settings to save it.');
-    }
-  };
-
-  const applyWidthPreset = (preset) => {
-    if (preset === 'restore') {
-      updateMacroWidth('');
-      return;
-    }
-    const px = computeWidthPresetPx(preset);
-    updateMacroWidth(String(px));
-  };
+    return {};
+  })();
 
   const formatVersionLabel = (version) => {
     if (!version) return '';
@@ -276,40 +274,6 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
             >
               {editorBusy ? 'Opening...' : 'Edit diagram'}
             </button>
-            <span className="flowme-editor-hover-width-group" aria-label="Diagram width presets">
-              <button
-                type="button"
-                className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-restore"
-                aria-label="Restore auto width"
-                onClick={() => applyWidthPreset('restore')}
-              >
-                <span className="flowme-width-icon flowme-width-icon-restore" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-max"
-                aria-label="Max width"
-                onClick={() => applyWidthPreset('max')}
-              >
-                <span className="flowme-width-icon flowme-width-icon-max" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-mid"
-                aria-label="Medium width"
-                onClick={() => applyWidthPreset('mid')}
-              >
-                <span className="flowme-width-icon flowme-width-icon-mid" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-min"
-                aria-label="Min width"
-                onClick={() => applyWidthPreset('min')}
-              >
-                <span className="flowme-width-icon flowme-width-icon-min" aria-hidden="true" />
-              </button>
-            </span>
           </div>
         ) : null}
         {showPreviewToolbar ? (
@@ -337,30 +301,11 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
               src={svgUrl}
               alt="Diagram preview"
               onLoad={(event) => {
-                const img = event.currentTarget;
-                let width = img.naturalWidth || img.width || 0;
-                let height = img.naturalHeight || img.height || 0;
-                if (!width || !height) {
-                  const rect = img.getBoundingClientRect();
-                  width = rect.width;
-                  height = rect.height;
-                }
-                if (diagram.width) {
-                  const cap = parseInt(diagram.width, 10);
-                  if (Number.isFinite(cap) && cap > 0) {
-                    width = Math.min(width || cap, cap);
-                    if (height && img.naturalWidth) {
-                      height = Math.round((height * width) / img.naturalWidth);
-                    }
-                  }
-                }
-                if (width && height) {
-                  setBaseSize({ width, height });
-                }
+                updateBaseSizeFromImage();
               }}
               style={{
-                width: scaledWidth ? `${scaledWidth}px` : undefined,
-                height: scaledHeight ? `${scaledHeight}px` : undefined,
+                width: previewSize.width ? `${previewSize.width}px` : undefined,
+                height: previewSize.height ? `${previewSize.height}px` : undefined,
               }}
             />
           ) : (

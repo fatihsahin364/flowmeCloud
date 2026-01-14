@@ -269,53 +269,216 @@ async function hasDraftForPage(pageId) {
   }
 }
 
-async function getFlowmeDiagramNamesFromPage(pageId) {
-  const data = await requestConfluenceJson(
-    route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
-    undefined,
-    'app'
-  );
-  let html = '';
-  if (data && data.body && data.body.storage && data.body.storage.value) {
-    html = String(data.body.storage.value);
-  } else if (data && data.body && data.body.value) {
-    html = String(data.body.value);
+function extractDiagramNameFromParams(params) {
+  if (!params || typeof params !== 'object') return '';
+  let name = params.diagramName;
+  if (name && typeof name === 'object' && name.value) {
+    name = name.value;
   }
-  const names = new Set();
-  let hasMacro = false;
-  const macroRegex = /<ac:structured-macro[^>]*ac:name="flowmecloud-diagram"[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi;
-  let match;
-  while ((match = macroRegex.exec(html))) {
-    hasMacro = true;
-    const block = match[1];
-    const paramRegex = /<ac:parameter[^>]*ac:name="diagramName"[^>]*>([\s\S]*?)<\/ac:parameter>/i;
-    const paramMatch = paramRegex.exec(block);
-    if (paramMatch && paramMatch[1]) {
-      const decoded = decodeHtmlEntities(paramMatch[1].trim());
-      if (decoded) names.add(decoded);
+  if (!name && params.config && params.config.diagramName) {
+    name = params.config.diagramName;
+  }
+  if (name && typeof name === 'object' && name.value) {
+    name = name.value;
+  }
+  return name ? String(name).trim() : '';
+}
+
+function findStringValueByKey(root, key, depth = 0) {
+  if (!root || typeof root !== 'object' || depth > 12) return '';
+  if (Object.prototype.hasOwnProperty.call(root, key)) {
+    const value = root[key];
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object' && typeof value.value === 'string') {
+      return value.value;
     }
   }
-  return { names, hasMacro };
+  if (Array.isArray(root)) {
+    for (const item of root) {
+      const found = findStringValueByKey(item, key, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  for (const childKey of Object.keys(root)) {
+    const found = findStringValueByKey(root[childKey], key, depth + 1);
+    if (found) return found;
+  }
+  return '';
+}
+
+function scanAdfForFlowmeMacros(adf) {
+  const names = new Set();
+  let hasMacro = false;
+  const extensions = [];
+  const rawFlowmeNodes = [];
+  const visit = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+    const type = value.type;
+    if (type === 'extension' || type === 'inlineExtension' || type === 'bodiedExtension') {
+      const attrs = value.attrs || {};
+      const extensionKey = attrs.extensionKey || attrs.extensionId || attrs.key || '';
+      const extensionType = attrs.extensionType || '';
+      const isFlowmeMacro =
+        extensionKey === 'flowmecloud-diagram' ||
+        extensionKey.endsWith('/flowmecloud-diagram') ||
+        extensionKey.endsWith(':flowmecloud-diagram');
+      if (isFlowmeMacro) {
+        hasMacro = true;
+        if (rawFlowmeNodes.length < 10) {
+          rawFlowmeNodes.push({
+            type,
+            attrs,
+            parameters: attrs.parameters || null,
+          });
+        }
+        const params = attrs.parameters || {};
+        const macroParams = params.macroParams || params.config || params.macroConfig || {};
+        let name = extractDiagramNameFromParams(macroParams);
+        if (!name) {
+          name = findStringValueByKey(attrs, 'diagramName');
+        }
+        if (!name) {
+          name = findStringValueByKey(params, 'diagramName');
+        }
+        if (name) names.add(name);
+      }
+      if (extensions.length < 25) {
+        const params = attrs.parameters || {};
+        const macroParams = params.macroParams || params.config || params.macroConfig || {};
+        extensions.push({
+          extensionKey,
+          extensionType,
+          hasMacroParams: Boolean(
+            params.macroParams || params.config || params.macroConfig
+          ),
+          diagramName:
+            extractDiagramNameFromParams(macroParams) ||
+            findStringValueByKey(attrs, 'diagramName') ||
+            findStringValueByKey(params, 'diagramName'),
+        });
+      }
+    }
+    Object.keys(value).forEach((key) => visit(value[key]));
+  };
+  visit(adf);
+  return { names, hasMacro, extensions, rawFlowmeNodes };
+}
+
+async function getFlowmeDiagramNamesFromPage(pageId) {
+  const names = new Set();
+  let hasMacro = false;
+  let scanOk = false;
+  let storageData = null;
+  try {
+    storageData = await requestConfluenceJson(
+      route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+      undefined,
+      'app'
+    );
+    scanOk = true;
+  } catch (e) {
+    // ignore storage read failure
+  }
+
+  if (storageData) {
+    let html = '';
+    if (storageData && storageData.body && storageData.body.storage && storageData.body.storage.value) {
+      html = String(storageData.body.storage.value);
+    } else if (storageData && storageData.body && storageData.body.value) {
+      html = String(storageData.body.value);
+    }
+    if (html) {
+      const macroRegex = /<ac:structured-macro[^>]*ac:name="flowmecloud-diagram"[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi;
+      let match;
+      while ((match = macroRegex.exec(html))) {
+        hasMacro = true;
+        const block = match[1];
+        const paramRegex = /<ac:parameter[^>]*ac:name="diagramName"[^>]*>([\s\S]*?)<\/ac:parameter>/i;
+        const paramMatch = paramRegex.exec(block);
+        if (paramMatch && paramMatch[1]) {
+          const decoded = decodeHtmlEntities(paramMatch[1].trim());
+          if (decoded) names.add(decoded);
+        }
+      }
+    }
+  }
+
+  let adfData = null;
+  try {
+    adfData = await requestConfluenceJson(
+      route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`,
+      undefined,
+      'app'
+    );
+    scanOk = true;
+  } catch (e) {
+    // ignore adf read failure
+  }
+
+  if (adfData) {
+    let adf = null;
+    const raw =
+      (adfData.body && adfData.body.atlas_doc_format && adfData.body.atlas_doc_format.value) ||
+      (adfData.body && adfData.body.atlas_doc_format) ||
+      (adfData.body && adfData.body.value) ||
+      null;
+    if (raw) {
+      try {
+        adf = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      } catch (e) {
+        adf = null;
+      }
+    }
+    if (adf) {
+      const adfResult = scanAdfForFlowmeMacros(adf);
+      adfResult.names.forEach((name) => names.add(name));
+      if (adfResult.hasMacro) hasMacro = true;
+    }
+  }
+
+  return { names, hasMacro, scanOk };
 }
 
 async function cleanupOrphanAttachments(pageId) {
-  const { names: keepNames, hasMacro } = await getFlowmeDiagramNamesFromPage(pageId);
+  const attachments = await listAttachmentsV2(pageId, 'app');
+  const flowmeCandidates = attachments.filter((attachment) => {
+    const title = attachment && attachment.title ? String(attachment.title) : '';
+    const comment = attachment && attachment.comment ? String(attachment.comment) : '';
+    if (!title || !comment.startsWith(FLOWME_ATTACHMENT_MARKER)) return false;
+    if (title.endsWith(DRAWIO_XML_SUFFIX) || title.endsWith(DRAWIO_SVG_SUFFIX)) {
+      return true;
+    }
+    return false;
+  });
+  if (flowmeCandidates.length === 0) {
+    return { deleted: 0, kept: 0, total: attachments.length, candidates: 0 };
+  }
+
+  const { names: keepNames, hasMacro, scanOk } = await getFlowmeDiagramNamesFromPage(pageId);
+  if (!scanOk) {
+    return { deleted: 0, kept: 0, total: 0, candidates: 0 };
+  }
   if (!hasMacro) {
     const hasDraft = await hasDraftForPage(pageId);
     if (hasDraft) {
-      console.log('FlowMe cleanup skipped: draft exists', { pageId });
       return { deleted: 0, kept: 0, total: 0, candidates: 0 };
     }
   }
   if (hasMacro && keepNames.size === 0) {
-    console.log('FlowMe cleanup skipped: macro exists but no diagramName set', { pageId });
     return { deleted: 0, kept: 0, total: 0, candidates: 0 };
   }
-  const attachments = await listAttachmentsV2(pageId, 'app');
+  // Reuse the filtered attachment list to avoid a second fetch.
   let candidates = 0;
   let deleted = 0;
   let kept = 0;
-  for (const attachment of attachments) {
+  for (const attachment of flowmeCandidates) {
     const title = attachment && attachment.title ? String(attachment.title) : '';
     const comment = attachment && attachment.comment ? String(attachment.comment) : '';
     if (!title || !comment.startsWith(FLOWME_ATTACHMENT_MARKER)) continue;
@@ -630,7 +793,38 @@ export async function pageUpdatedHandler(event) {
       });
       return;
     }
-    console.log('FlowMe pageUpdatedHandler running', { pageId });
+    const updateTrigger =
+      (event && event.updateTrigger) ||
+      (event && event.context && event.context.updateTrigger) ||
+      '';
+    const eventType = (event && event.eventType) || '';
+    console.log('FlowMe pageUpdatedHandler running', {
+      pageId,
+      eventType,
+      updateTrigger,
+      eventKeys: event ? Object.keys(event) : [],
+    });
+    let allowCleanup = false;
+    if (!updateTrigger || updateTrigger === 'user') {
+      allowCleanup = true;
+    } else if (updateTrigger === 'edit_page') {
+      const hasDraft = await hasDraftForPage(pageId);
+      console.log('FlowMe pageUpdatedHandler edit_page draft check', {
+        pageId,
+        hasDraft,
+      });
+      if (!hasDraft) {
+        allowCleanup = true;
+      }
+    }
+    if (!allowCleanup) {
+      console.log('FlowMe pageUpdatedHandler skipped: updateTrigger', {
+        pageId,
+        eventType,
+        updateTrigger,
+      });
+      return;
+    }
     await cleanupOrphanAttachments(String(pageId));
   } catch (e) {
     console.log('FlowMe pageUpdatedHandler failed', e && e.message ? e.message : e);

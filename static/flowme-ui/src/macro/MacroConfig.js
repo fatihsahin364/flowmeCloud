@@ -71,6 +71,28 @@ function validateWidthInput(raw) {
   return { ok: true, value: String(numberValue) };
 }
 
+function computeWidthPresetPx(preset) {
+  let available = 0;
+  if (typeof document !== 'undefined' && document.body) {
+    available = Math.round(document.body.getBoundingClientRect().width || 0);
+  }
+  if (!available && typeof window !== 'undefined') {
+    available = Math.round(window.innerWidth || 0);
+  }
+  const maxAllowed = Math.max(320, available ? available - 120 : 720);
+  let target = 320;
+  if (preset === 'min') {
+    target = Math.round(maxAllowed * 0.35);
+  } else if (preset === 'mid') {
+    target = Math.round(maxAllowed * 0.6);
+  } else {
+    target = Math.round(maxAllowed * 0.95);
+  }
+  const minPx = 220;
+  const maxPx = 2600;
+  return Math.max(minPx, Math.min(maxPx, target));
+}
+
 export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
   const [diagram, setDiagram] = useState(initialDiagram);
   const [macroStatus, setMacroStatus] = useState('');
@@ -137,6 +159,26 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
       setNameTouched(true);
     }
     setDiagram((prev) => ({ ...prev, [name]: nextValue }));
+  };
+
+  const applyWidthPreset = async (preset) => {
+    const nextWidth = preset === 'restore' ? '' : String(computeWidthPresetPx(preset));
+    setDiagram((prev) => ({ ...prev, width: nextWidth }));
+    if (!isEdit || !view || typeof view.submit !== 'function') {
+      return;
+    }
+    try {
+      await view.submit({
+        config: {
+          diagramName: diagram.diagramName,
+          width: nextWidth,
+          border: diagram.border,
+        },
+        keepEditing: true,
+      });
+    } catch (e) {
+      // Ignore submit errors here; user can still save via the main button.
+    }
   };
 
   const openEditorModal = async (name, onClose) => {
@@ -209,6 +251,40 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
             min="1"
           />
         </label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-restore"
+            aria-label="Restore auto width"
+            onClick={() => applyWidthPreset('restore')}
+          >
+            <span className="flowme-width-icon flowme-width-icon-restore" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-max"
+            aria-label="Max width"
+            onClick={() => applyWidthPreset('max')}
+          >
+            <span className="flowme-width-icon flowme-width-icon-max" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-mid"
+            aria-label="Medium width"
+            onClick={() => applyWidthPreset('mid')}
+          >
+            <span className="flowme-width-icon flowme-width-icon-mid" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="aui-button flowme-editor-hover-width-btn flowme-editor-hover-width-min"
+            aria-label="Min width"
+            onClick={() => applyWidthPreset('min')}
+          >
+            <span className="flowme-width-icon flowme-width-icon-min" aria-hidden="true" />
+          </button>
+        </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             type="checkbox"
