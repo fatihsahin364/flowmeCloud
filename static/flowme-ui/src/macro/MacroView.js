@@ -20,6 +20,9 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
   const aiMenuRef = useRef(null);
   const aiFileInputRef = useRef(null);
   const aiMenuPrevHeightRef = useRef(null);
+  const aiPollTimerRef = useRef(null);
+  const aiPollStartRef = useRef(0);
+  const aiPollJobRef = useRef('');
 
   // Close the AI menu when the user clicks outside, scrolls, or presses Escape.
   useEffect(() => {
@@ -28,6 +31,17 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
     setBaseSize({ width: 0, height: 0 });
     setAiMenuOpen(false);
   }, [initialDiagram.diagramName, initialDiagram.width, initialDiagram.border]);
+
+  useEffect(() => {
+    return () => {
+      if (aiPollTimerRef.current) {
+        clearTimeout(aiPollTimerRef.current);
+        aiPollTimerRef.current = null;
+      }
+      aiPollJobRef.current = '';
+      aiPollStartRef.current = 0;
+    };
+  }, []);
 
   const loadVersions = async (preferLatest) => {
     if (!isEditing || !pageId || !diagram.diagramName) {
@@ -354,6 +368,59 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
     }
   };
 
+  const clearAiPolling = () => {
+    if (aiPollTimerRef.current) {
+      clearTimeout(aiPollTimerRef.current);
+      aiPollTimerRef.current = null;
+    }
+    aiPollJobRef.current = '';
+    aiPollStartRef.current = 0;
+  };
+
+  const scheduleAiPoll = (jobId, delayMs) => {
+    if (aiPollTimerRef.current) {
+      clearTimeout(aiPollTimerRef.current);
+      aiPollTimerRef.current = null;
+    }
+    aiPollTimerRef.current = setTimeout(() => {
+      pollAiJob(jobId);
+    }, delayMs);
+  };
+
+  const pollAiJob = async (jobId) => {
+    if (!jobId) return;
+    try {
+      const res = await invoke('checkAiJobStatus', { jobId });
+      if (res && res.ok && res.status === 'done' && res.xml) {
+        clearAiPolling();
+        setAiBusy(false);
+        await openEditorWithXml(res.xml);
+        return;
+      }
+      if (res && res.ok) {
+        const startedAt = aiPollStartRef.current || Date.now();
+        aiPollStartRef.current = startedAt;
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs > 4 * 60 * 1000) {
+          clearAiPolling();
+          setAiBusy(false);
+          showAiError('AI is taking longer than expected. Please try again.');
+          return;
+        }
+        scheduleAiPoll(jobId, 3000);
+        return;
+      }
+      const err = res && res.error ? res.error : 'AI request failed.';
+      clearAiPolling();
+      setAiBusy(false);
+      showAiError(err);
+    } catch (e) {
+      clearAiPolling();
+      setAiBusy(false);
+      showAiError(e && e.message ? e.message : 'AI request failed.');
+    }
+  };
+
   const openAiTextDialog = async (mode, title) => {
     if (!ensureAiReady()) return;
     setAiMenuOpen(false);
@@ -395,23 +462,36 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
     setMacroStatus('Generating diagram with AI...');
     setAiBusy(true);
     try {
-      const res = await invoke('aiTextToDiagram', {
+      const res = await invoke('startAiTextToDiagram', {
         pageId,
         diagramName: diagram.diagramName,
         text: trimmed,
         mode: modeValue,
       });
-      if (!res || res.ok !== true || !res.xml) {
+      if (!res || res.ok !== true) {
         const err = res && res.error ? res.error : 'AI request failed.';
         showAiError(err);
         return;
       }
-      await openEditorWithXml(res.xml);
+      if (res.status === 'done' && res.xml) {
+        setAiBusy(false);
+        await openEditorWithXml(res.xml);
+        return;
+      }
+      if (res.jobId) {
+        aiPollJobRef.current = res.jobId;
+        aiPollStartRef.current = Date.now();
+        scheduleAiPoll(res.jobId, 2000);
+        return;
+      }
+      showAiError('AI response did not return a job id.');
     } catch (e) {
       const message = e && e.message ? e.message : 'AI request failed.';
       showAiError(message);
     } finally {
-      setAiBusy(false);
+      if (!aiPollJobRef.current) {
+        setAiBusy(false);
+      }
     }
   };
 
@@ -495,22 +575,35 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
           showAiError('Image is too large to send. Please use a smaller screenshot.');
           return;
         }
-        const res = await invoke('aiPngToDiagram', {
+        const res = await invoke('startAiPngToDiagram', {
           pageId,
           diagramName: diagram.diagramName,
           imageDataUrl: dataUrl,
         });
-        if (!res || res.ok !== true || !res.xml) {
+        if (!res || res.ok !== true) {
           const err = res && res.error ? res.error : 'AI request failed.';
           showAiError(err);
           return;
         }
-        await openEditorWithXml(res.xml);
+        if (res.status === 'done' && res.xml) {
+          setAiBusy(false);
+          await openEditorWithXml(res.xml);
+          return;
+        }
+        if (res.jobId) {
+          aiPollJobRef.current = res.jobId;
+          aiPollStartRef.current = Date.now();
+          scheduleAiPoll(res.jobId, 2000);
+          return;
+        }
+        showAiError('AI response did not return a job id.');
       } catch (e) {
         const message = e && e.message ? e.message : 'AI request failed.';
         showAiError(message);
       } finally {
-        setAiBusy(false);
+        if (!aiPollJobRef.current) {
+          setAiBusy(false);
+        }
       }
     };
     reader.onerror = () => {
@@ -615,13 +708,15 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
     <div className={wrapperClass}>
       {aiBusy ? (
         <div className="flowme-wait-overlay" role="status" aria-live="polite">
-          <div className="flowme-wait-card">
-            <div className="flowme-wait-title">Generating diagram with AI…</div>
-            <div className="flowme-wait-hint">
-              This may take a couple of minutes. Please keep this tab open.
-            </div>
-            <div className="flowme-wait-bar">
-              <div className="flowme-wait-bar-fill" />
+          <div className="flowme-wait-overlay__box">
+            <div className="flowme-wait-overlay__row">
+              <div className="flowme-wait-overlay__spinner" />
+              <div>
+                <div className="flowme-wait-overlay__title">Generating diagram with AI…</div>
+                <div className="flowme-wait-overlay__hint">
+                  This may take a couple of minutes. Please keep this tab open.
+                </div>
+              </div>
             </div>
           </div>
         </div>

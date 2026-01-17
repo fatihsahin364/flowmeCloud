@@ -15,6 +15,8 @@ const AI_DEFAULT_TIMEOUT_SECONDS = 360;
 const AI_DEFAULT_ALLOWED_HOSTS = 'api.openai.com';
 const AI_MAX_TEXT_CHARS = 20000;
 const AI_MAX_IMAGE_DATA_URL_CHARS = 10000000;
+const AI_JOB_PREFIX = 'flowme.ai.job.';
+const AI_JOB_TTL_MS = 60 * 60 * 1000;
 
 const AI_PROMPT_WORKFLOW = [
   'You are a draw.io XML generator.',
@@ -259,6 +261,8 @@ function buildResponsesRequestJsonText(model, prompt, userText) {
   const userPayload = `User workflow:\n${String(userText || '')}`;
   return JSON.stringify({
     model,
+    background: true,
+    store: true,
     input: [
       {
         role: 'user',
@@ -275,6 +279,8 @@ function buildResponsesRequestJsonText(model, prompt, userText) {
 function buildResponsesRequestJsonImage(model, prompt, imageDataUrl) {
   return JSON.stringify({
     model,
+    background: true,
+    store: true,
     input: [
       {
         role: 'user',
@@ -375,6 +381,26 @@ function collectResponseText(parsed) {
   return '';
 }
 
+function extractResponseId(parsed) {
+  if (!parsed || typeof parsed !== 'object') return '';
+  if (parsed.id) return String(parsed.id);
+  if (parsed.response && parsed.response.id) return String(parsed.response.id);
+  return '';
+}
+
+function extractResponseStatus(parsed) {
+  if (!parsed || typeof parsed !== 'object') return '';
+  if (parsed.status) return String(parsed.status);
+  if (parsed.response && parsed.response.status) return String(parsed.response.status);
+  return '';
+}
+
+function isResponseComplete(parsed) {
+  const status = extractResponseStatus(parsed).toLowerCase();
+  if (!status) return false;
+  return status === 'completed' || status === 'succeeded';
+}
+
 function normalizeAiConfig(rawConfig) {
   const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
   const enabled = config.enabled === true || String(config.enabled || '').toLowerCase() === 'true';
@@ -457,6 +483,55 @@ async function postAiRequest(endpoint, apiKey, payloadJson, timeoutSeconds) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function getAiResponse(endpoint, apiKey, timeoutSeconds) {
+  const controller = new AbortController();
+  const timeoutMs = Math.max(1, timeoutSeconds) * 1000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      return { ok: false, error: `AI request failed (${response.status}).`, body };
+    }
+    return { ok: true, body };
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      return { ok: false, error: 'AI request timed out. Please try again.' };
+    }
+    return { ok: false, error: 'AI request failed.' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function saveAiJob(jobId, payload) {
+  if (!jobId) return;
+  const record = {
+    ...payload,
+    id: jobId,
+    createdAt: new Date().toISOString(),
+  };
+  await storage.set(`${AI_JOB_PREFIX}${jobId}`, record);
+}
+
+async function loadAiJob(jobId) {
+  if (!jobId) return null;
+  const record = await storage.get(`${AI_JOB_PREFIX}${jobId}`);
+  return record || null;
+}
+
+async function deleteAiJob(jobId) {
+  if (!jobId) return;
+  await storage.delete(`${AI_JOB_PREFIX}${jobId}`);
 }
 
 
@@ -942,12 +1017,13 @@ resolver.define('setConfig', async (req) => {
   return { ok: true };
 });
 
-resolver.define('aiTextToDiagram', async (req) => {
-  const payload = req && req.payload ? req.payload : {};
+async function startAiTextToDiagramInternal(payload) {
+  const startedAt = Date.now();
   const pageId = payload.pageId ? String(payload.pageId) : '';
   const diagramName = payload.diagramName ? String(payload.diagramName) : '';
   const text = payload.text ? String(payload.text) : '';
   const mode = payload.mode ? String(payload.mode) : '';
+  console.log('FlowMe AI text start', { pageId, diagramName, mode, startedAt });
 
   if (!pageId || !diagramName) {
     return { ok: false, error: 'Missing pageId or diagramName.' };
@@ -982,24 +1058,61 @@ resolver.define('aiTextToDiagram', async (req) => {
     return { ok: false, error: response.error };
   }
   let outputText = '';
+  let parsed = null;
   try {
-    outputText = collectResponseText(JSON.parse(response.body));
+    parsed = JSON.parse(response.body);
+    outputText = collectResponseText(parsed);
   } catch (e) {
     outputText = '';
   }
   let xml = extractMxfileXml(outputText, response.body);
-  if (!xml) {
-    return { ok: false, error: 'AI response did not contain mxfile XML.' };
+  if (xml) {
+    xml = stripXmlComments(stripCommonWrappers(xml) || xml);
+    console.log('FlowMe AI text done sync', {
+      pageId,
+      diagramName,
+      mode,
+      durationMs: Date.now() - startedAt,
+    });
+    return { ok: true, status: 'done', xml };
   }
-  xml = stripXmlComments(stripCommonWrappers(xml) || xml);
-  return { ok: true, xml };
+  const responseId = extractResponseId(parsed);
+  if (!responseId) {
+    console.log('FlowMe AI text missing job id', {
+      pageId,
+      diagramName,
+      mode,
+      durationMs: Date.now() - startedAt,
+    });
+    return { ok: false, error: 'AI response did not return a job id.' };
+  }
+  await saveAiJob(responseId, { pageId, diagramName, type: 'text' });
+  console.log('FlowMe AI text queued', {
+    pageId,
+    diagramName,
+    mode,
+    jobId: responseId,
+    durationMs: Date.now() - startedAt,
+  });
+  return { ok: true, status: extractResponseStatus(parsed) || 'pending', jobId: responseId };
+}
+
+resolver.define('startAiTextToDiagram', async (req) => {
+  const payload = req && req.payload ? req.payload : {};
+  return startAiTextToDiagramInternal(payload);
 });
 
-resolver.define('aiPngToDiagram', async (req) => {
+resolver.define('aiTextToDiagram', async (req) => {
   const payload = req && req.payload ? req.payload : {};
+  return startAiTextToDiagramInternal(payload);
+});
+
+async function startAiPngToDiagramInternal(payload) {
+  const startedAt = Date.now();
   const pageId = payload.pageId ? String(payload.pageId) : '';
   const diagramName = payload.diagramName ? String(payload.diagramName) : '';
   const imageDataUrl = payload.imageDataUrl ? String(payload.imageDataUrl) : '';
+  console.log('FlowMe AI png start', { pageId, diagramName, startedAt });
 
   if (!pageId || !diagramName) {
     return { ok: false, error: 'Missing pageId or diagramName.' };
@@ -1045,17 +1158,111 @@ resolver.define('aiPngToDiagram', async (req) => {
     return { ok: false, error: response.error };
   }
   let outputText = '';
+  let parsed = null;
   try {
-    outputText = collectResponseText(JSON.parse(response.body));
+    parsed = JSON.parse(response.body);
+    outputText = collectResponseText(parsed);
   } catch (e) {
     outputText = '';
   }
   let xml = extractMxfileXml(outputText, response.body);
-  if (!xml) {
+  if (xml) {
+    xml = stripXmlComments(stripCommonWrappers(xml) || xml);
+    console.log('FlowMe AI png done sync', {
+      pageId,
+      diagramName,
+      durationMs: Date.now() - startedAt,
+    });
+    return { ok: true, status: 'done', xml };
+  }
+  const responseId = extractResponseId(parsed);
+  if (!responseId) {
+    console.log('FlowMe AI png missing job id', {
+      pageId,
+      diagramName,
+      durationMs: Date.now() - startedAt,
+    });
+    return { ok: false, error: 'AI response did not return a job id.' };
+  }
+  await saveAiJob(responseId, { pageId, diagramName, type: 'png' });
+  console.log('FlowMe AI png queued', {
+    pageId,
+    diagramName,
+    jobId: responseId,
+    durationMs: Date.now() - startedAt,
+  });
+  return { ok: true, status: extractResponseStatus(parsed) || 'pending', jobId: responseId };
+}
+
+resolver.define('startAiPngToDiagram', async (req) => {
+  const payload = req && req.payload ? req.payload : {};
+  return startAiPngToDiagramInternal(payload);
+});
+
+resolver.define('aiPngToDiagram', async (req) => {
+  const payload = req && req.payload ? req.payload : {};
+  return startAiPngToDiagramInternal(payload);
+});
+
+resolver.define('checkAiJobStatus', async (req) => {
+  const payload = req && req.payload ? req.payload : {};
+  const jobId = payload.jobId ? String(payload.jobId) : '';
+  const pollStartedAt = Date.now();
+  if (!jobId) {
+    return { ok: false, error: 'Missing jobId.' };
+  }
+  const job = await loadAiJob(jobId);
+  if (!job) {
+    return { ok: false, error: 'AI job not found.' };
+  }
+  const createdAt = job.createdAt ? new Date(job.createdAt).getTime() : 0;
+  if (createdAt && Date.now() - createdAt > AI_JOB_TTL_MS) {
+    await deleteAiJob(jobId);
+    return { ok: false, error: 'AI job expired. Please try again.' };
+  }
+  const configCheck = await assertAiConfig();
+  if (!configCheck.ok) {
+    return { ok: false, error: configCheck.error };
+  }
+  const endpoint = `${configCheck.config.apiBaseUrl}/v1/responses/${jobId}`;
+  const response = await getAiResponse(endpoint, configCheck.config.secretValue, configCheck.config.timeoutSeconds);
+  if (!response.ok) {
+    return { ok: false, error: response.error };
+  }
+  let parsed = null;
+  let outputText = '';
+  try {
+    parsed = JSON.parse(response.body);
+    outputText = collectResponseText(parsed);
+  } catch (e) {
+    outputText = '';
+  }
+  let xml = extractMxfileXml(outputText, response.body);
+  if (xml) {
+    xml = stripXmlComments(stripCommonWrappers(xml) || xml);
+    await deleteAiJob(jobId);
+    console.log('FlowMe AI job done', {
+      jobId,
+      status: extractResponseStatus(parsed),
+      durationMs: Date.now() - pollStartedAt,
+    });
+    return { ok: true, status: 'done', xml };
+  }
+  if (isResponseComplete(parsed)) {
+    await deleteAiJob(jobId);
+    console.log('FlowMe AI job complete without xml', {
+      jobId,
+      status: extractResponseStatus(parsed),
+      durationMs: Date.now() - pollStartedAt,
+    });
     return { ok: false, error: 'AI response did not contain mxfile XML.' };
   }
-  xml = stripXmlComments(stripCommonWrappers(xml) || xml);
-  return { ok: true, xml };
+  console.log('FlowMe AI job pending', {
+    jobId,
+    status: extractResponseStatus(parsed),
+    durationMs: Date.now() - pollStartedAt,
+  });
+  return { ok: true, status: extractResponseStatus(parsed) || 'pending' };
 });
 
 resolver.define('listDiagrams', async (req) => {
