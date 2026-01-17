@@ -48,6 +48,8 @@ permissions:
       backend:
         - https://*.atlassian.net
         - https://embed.diagrams.net
+        - https://api.openai.com
+        - https://*.openai.com
     frames:
       - https://embed.diagrams.net
 app:

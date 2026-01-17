@@ -9,6 +9,166 @@ const CONFIG_KEY = 'flowme.config';
 const DRAWIO_XML_SUFFIX = '.mxfile';
 const DRAWIO_SVG_SUFFIX = '.svg';
 const FLOWME_ATTACHMENT_MARKER = 'FlowMe diagram:';
+const AI_DEFAULT_MODEL = 'gpt-5.2';
+const AI_DEFAULT_BASE_URL = 'https://api.openai.com';
+const AI_DEFAULT_TIMEOUT_SECONDS = 360;
+const AI_DEFAULT_ALLOWED_HOSTS = 'api.openai.com';
+const AI_MAX_TEXT_CHARS = 20000;
+const AI_MAX_IMAGE_DATA_URL_CHARS = 10000000;
+
+const AI_PROMPT_WORKFLOW = [
+  'You are a draw.io XML generator.',
+  'The user will provide a workflow in plain language.',
+  'Task: convert it into diagrams.net (draw.io) mxfile XML.',
+  '',
+  'Output rules:',
+  '- Output ONLY XML. No markdown, no commentary, no XML comments.',
+  '- Root structure must be <mxfile><diagram><mxGraphModel><root>...',
+  '- Root must contain two base cells: (1) id="A0" and (2) id="A1" parent="A0".',
+  '- All vertex/edge cells must have parent="A1" unless inside a swimlane/pool.',
+  '- Every connector must be <mxCell edge="1"> with <mxGeometry relative="1" as="geometry"/>.',
+  '- Direction is top-to-bottom; y increases downward; avoid overlaps; leave clear vertical spacing (minimum 60px between node bounds).',
+  '- Do not place nodes on top of each other; ensure distinct y positions for sequential steps; never reuse the same y-range.',
+  '- Use orthogonal connectors only; no diagonal lines. Use elbows so lines move horizontally/vertically.',
+  '- Connect nearest sides between nodes; avoid crossing through shapes.',
+  '- Shapes: start/end ellipse, activity rounded rectangle, decision rhombus.',
+  '- Decision branches: Yes from right (exitX=1; exitY=0.5), No from left (exitX=0; exitY=0.5), continuation from bottom (exitX=0.5; exitY=1) when needed.',
+  '- Edge labels like "Yes"/"No". Node text short; use &#10; for line breaks.',
+  '- Default colors: start/end fillColor=#d5e8d4 strokeColor=#82b366; process fillColor=#dae8fc strokeColor=#6c8ebf; decision fillColor=#fff2cc strokeColor=#d6b656; error/warning fillColor=#f8cecc strokeColor=#b85450.',
+  '- Do NOT use swimlanes. Always render a single top-to-bottom workflow.',
+  '- Keep it minimal: no icons or decorative shapes.',
+  '',
+  'Interpretation rules:',
+  '- Order steps sequentially.',
+  '- Model loops when text says retry/return.',
+  '- Use decisions for conditional text like "if approved".',
+].join('\n');
+
+const AI_PROMPT_SWIMLANE = [
+  'You are a draw.io XML generator.',
+  'The user will provide a workflow in plain language.',
+  'Task: convert it into diagrams.net (draw.io) mxfile XML.',
+  '',
+  'Output rules:',
+  '- Output ONLY XML. No markdown, no commentary.',
+  '- Root structure must be <mxfile><diagram><mxGraphModel><root>...',
+  '- Root must contain two base cells: (1) id="A0" and (2) id="A1" parent="A0".',
+  '- All vertex/edge cells must have parent="A1" unless inside a swimlane/pool.',
+  '- Every connector must be <mxCell edge="1"> with <mxGeometry relative="1" as="geometry"/>.',
+  '- Direction is top-to-bottom; y increases downward; avoid overlaps; leave clear vertical spacing (minimum 60px between node bounds).',
+  '- Do not place nodes on top of each other; ensure distinct y positions for sequential steps; never reuse the same y-range.',
+  '- Use orthogonal connectors only; no diagonal lines. Use elbows so lines move horizontally/vertically.',
+  '- Connect nearest sides between nodes; avoid crossing through shapes.',
+  '- Shapes: start/end ellipse, activity rounded rectangle, decision rhombus.',
+  '- Decision branches: Yes from right (exitX=1; exitY=0.5), No from left (exitX=0; exitY=0.5), continuation from bottom (exitX=0.5; exitY=1) when needed.',
+  '- Edge labels like "Yes"/"No". Node text short; use &#10; for line breaks.',
+  '- Default colors: start/end fillColor=#d5e8d4 strokeColor=#82b366; process fillColor=#dae8fc strokeColor=#6c8ebf; decision fillColor=#fff2cc strokeColor=#d6b656; error/warning fillColor=#f8cecc strokeColor=#b85450.',
+  '- Always use swimlanes: create one pool with one lane per actor/role.',
+  '- If actors are not explicit, create a single lane named "Process".',
+  '- Size the pool/lanes so all nodes fit inside; pool/lane height must cover the lowest node plus at least 80px padding.',
+  '- No node may exceed lane bounds.',
+  '- If any node would extend beyond a lane, increase lane/pool height before finalizing.',
+  '- Node widths must not exceed lane width; wrap labels with &#10; if needed.',
+  '- Edge cells should be parented to the pool so lanes can connect.',
+  '- Keep it minimal: no icons or decorative shapes.',
+  '',
+  'Interpretation rules:',
+  '- Order steps sequentially.',
+  '- Model loops when text says retry/return.',
+  '- Use decisions for conditional text like "if approved".',
+].join('\n');
+
+const AI_PROMPT_SMART = [
+  'You are a draw.io XML generator.',
+  'The user will provide a workflow in plain language.',
+  'Task: convert it into the most suitable diagrams.net (draw.io) mxfile XML.',
+  '',
+  'Output rules:',
+  '- Output ONLY XML. No markdown, no commentary.',
+  '- Root structure must be <mxfile><diagram><mxGraphModel><root>...',
+  '- Root must contain two base cells: (1) id="A0" and (2) id="A1" parent="A0".',
+  '- All vertex/edge cells must have parent="A1" unless inside a swimlane/pool.',
+  '- Every connector must be <mxCell edge="1"> with <mxGeometry relative="1" as="geometry"/>.',
+  '- Direction is top-to-bottom; y increases downward; avoid overlaps; leave clear vertical spacing (minimum 60px between node bounds).',
+  '- Do not place nodes on top of each other; ensure distinct y positions for sequential steps; never reuse the same y-range.',
+  '- Use orthogonal connectors only; no diagonal lines. Use elbows so lines move horizontally/vertically.',
+  '- Connect nearest sides between nodes; avoid crossing through shapes.',
+  '- Shapes: start/end ellipse, activity rounded rectangle, decision rhombus.',
+  '- Decision branches: Yes from right (exitX=1; exitY=0.5), No from left (exitX=0; exitY=0.5), continuation from bottom (exitX=0.5; exitY=1) when needed.',
+  '- Edge labels like "Yes"/"No". Node text short; use &#10; for line breaks.',
+  '- Default colors: start/end fillColor=#d5e8d4 strokeColor=#82b366; process fillColor=#dae8fc strokeColor=#6c8ebf; decision fillColor=#fff2cc strokeColor=#d6b656; error/warning fillColor=#f8cecc strokeColor=#b85450.',
+  '- Choose the best diagram type for the text:',
+  '  * If the text mentions tables, entities, attributes, columns, PK/FK, relationships, or cardinality, ALWAYS choose ER diagram.',
+  '  * If roles/actors/teams/systems are emphasized, choose swimlane workflow.',
+  '  * Otherwise choose a single top-to-bottom workflow.',
+  '- If ER is chosen, follow these ER rules strictly:',
+  '  * Use table-style entities (shape=table; childLayout=tableLayout) with a header row for entity name.',
+  '  * List attributes as rows; mark PK/FK rows and keep them inside the table container.',
+  '  * Use entity relation connectors: style includes edgeStyle=entityRelationEdgeStyle; and ER arrowheads (ERone/ERzeroToMany/ERmany) as appropriate.',
+  '  * Use orthogonal connectors only; no diagonal lines; connect nearest sides.',
+  '  * Avoid overlaps; space entities so connectors are readable.',
+  '- Be a bit more creative in layout and labeling while keeping the diagram clear and minimal; the user trusts your judgment.',
+  '- If swimlanes are used, size the pool/lanes so all nodes fit inside; pool/lane height must cover the lowest node plus at least 80px padding.',
+  '- If swimlanes are used, no node may exceed lane bounds.',
+  '- If any node would extend beyond a lane, increase lane/pool height before finalizing.',
+  '- If swimlanes are used, node widths must not exceed lane width; wrap labels with &#10; if needed.',
+  '- If in doubt, pick the simpler layout.',
+  '- Keep it minimal: no icons or decorative shapes.',
+  '',
+  'Interpretation rules:',
+  '- Order steps sequentially.',
+  '- Model loops when text says retry/return.',
+  '- Use decisions for conditional text like "if approved".',
+].join('\n');
+
+const AI_PROMPT_ER = [
+  'You are a draw.io ER diagram generator.',
+  'The user will provide a data/domain description in plain language.',
+  'Task: generate an Entity-Relationship (ER) diagram as diagrams.net (draw.io) mxfile XML.',
+  '',
+  'Output rules:',
+  '- Output ONLY XML. No markdown, no commentary.',
+  '- Root structure must be <mxfile><diagram><mxGraphModel><root>...',
+  '- Root must contain two base cells: (1) id="A0" and (2) id="A1" parent="A0".',
+  '- Use table-style entities (shape=table; childLayout=tableLayout) with a header row for entity name.',
+  '- List attributes as rows; mark PK/FK rows and keep them inside the table container.',
+  '- Use entity relation connectors: style includes edgeStyle=entityRelationEdgeStyle; and ER arrowheads (ERone/ERzeroToMany/ERmany) as appropriate.',
+  '- Use orthogonal connectors only; no diagonal lines; connect nearest sides.',
+  '- Avoid overlaps; space entities so connectors are readable.',
+  '- Keep it minimal: no icons or decorative shapes.',
+  '',
+  'Interpretation rules:',
+  '- Infer entities from nouns; attributes from described fields.',
+  '- Infer relationships and cardinality from text (e.g., one-to-many, many-to-many).',
+  '- If unclear, choose reasonable defaults and keep the diagram clean.',
+].join('\n');
+
+const AI_PROMPT_PNG = [
+  'You are given a PNG screenshot of a diagram.',
+  '',
+  'Task:',
+  'Recreate the diagram as a valid diagrams.net (draw.io) "mxfile" XML.',
+  '',
+  'Hard rules (must follow):',
+  '- Output ONLY the mxfile XML. No markdown, no code fences, no commentary.',
+  '- The root element MUST be <mxfile ...> and it must be well-formed XML.',
+  '- Do NOT include any external links, images, or data URIs.',
+  '- Use standard mxGraph shapes only (rectangles/rounded rectangles/ellipses/diamonds, arrows/connectors, labels).',
+  '- Every visible text label in the PNG should appear as label text in the XML (best effort).',
+  '- Preserve the directionality of connectors and arrowheads.',
+  '- Keep a clean layout: avoid overlaps; align to a simple grid; maintain approximate relative positions.',
+  '- Do not place nodes on top of each other; keep distinct y positions for sequential steps.',
+  '- Use orthogonal connectors only; no diagonal lines. Use elbows so lines move horizontally/vertically.',
+  '- Connect nearest sides between nodes; avoid crossing through shapes.',
+  '',
+  'Quality targets:',
+  '- Prefer orthogonal connectors unless clearly diagonal.',
+  '- Use Helvetica and readable font sizes.',
+  '',
+  'Output requirements:',
+  '- Return a single mxfile that opens directly in diagrams.net.',
+  '- No truncation. If you cannot fully reconstruct, still return the best valid mxfile XML you can.',
+].join('\n');
 
 async function getActorInfo() {
   try {
@@ -45,6 +205,258 @@ function buildFlowmeComment(diagramName, actor) {
   }
   const display = actor.displayName ? actor.displayName : '';
   return `${base} | savedBy:${display}`;
+}
+
+function normalizeAiBaseUrl(baseUrl) {
+  let normalized = String(baseUrl || '').trim();
+  while (normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1);
+  }
+  if (normalized.endsWith('/v1')) {
+    normalized = normalized.slice(0, -3);
+  }
+  return normalized;
+}
+
+function parseAiHostAllowlist(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return [];
+  return value
+    .split(/[,\s]+/)
+    .map((part) => String(part || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isAiHostAllowed(host, patterns) {
+  const h = String(host || '').trim().toLowerCase();
+  if (!h) return false;
+  if (!patterns || patterns.length === 0) return false;
+  for (const pattern of patterns) {
+    const p = String(pattern || '').trim().toLowerCase();
+    if (!p) continue;
+    if (p.startsWith('*.')) {
+      const suffix = p.slice(2);
+      if (!suffix) continue;
+      if (h === suffix) continue;
+      if (h.endsWith(`.${suffix}`)) return true;
+    } else if (h === p) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function selectAiTextPrompt(mode) {
+  const safeMode = String(mode || '').trim().toLowerCase();
+  if (safeMode === 'swimlane') return AI_PROMPT_SWIMLANE;
+  if (safeMode === 'er') return AI_PROMPT_ER;
+  if (safeMode === 'smart') return AI_PROMPT_SMART;
+  return AI_PROMPT_WORKFLOW;
+}
+
+// Build an OpenAI Responses API payload for text prompts.
+function buildResponsesRequestJsonText(model, prompt, userText) {
+  const userPayload = `User workflow:\n${String(userText || '')}`;
+  return JSON.stringify({
+    model,
+    input: [
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: prompt },
+          { type: 'input_text', text: userPayload },
+        ],
+      },
+    ],
+  });
+}
+
+// Build an OpenAI Responses API payload for image-to-diagram conversion.
+function buildResponsesRequestJsonImage(model, prompt, imageDataUrl) {
+  return JSON.stringify({
+    model,
+    input: [
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: prompt },
+          { type: 'input_image', image_url: imageDataUrl },
+        ],
+      },
+    ],
+  });
+}
+
+function extractXmlBetweenMxfileTags(text) {
+  if (!text) return null;
+  const start = text.indexOf('<mxfile');
+  if (start < 0) return null;
+  const end = text.indexOf('</mxfile>', start);
+  if (end < 0) return null;
+  const xml = text.slice(start, end + '</mxfile>'.length).trim();
+  return xml || null;
+}
+
+function stripSymmetricWrapper(value, wrapper) {
+  if (!value || !wrapper) return value;
+  if (value.startsWith(wrapper) && value.endsWith(wrapper) && value.length > wrapper.length * 2) {
+    return value.slice(wrapper.length, value.length - wrapper.length).trim();
+  }
+  return value;
+}
+
+function stripCommonWrappers(value) {
+  if (value == null) return null;
+  let out = String(value).trim();
+  if (out && out.charAt(0) === '\uFEFF') {
+    out = out.slice(1).trim();
+  }
+  if (out.startsWith('```')) {
+    const firstNl = out.indexOf('\n');
+    if (firstNl !== -1) {
+      const lastFence = out.lastIndexOf('```');
+      if (lastFence > firstNl) {
+        out = out.slice(firstNl + 1, lastFence).trim();
+      }
+    }
+  }
+  out = stripSymmetricWrapper(out, "'''");
+  out = stripSymmetricWrapper(out, '"""');
+  if (out.length >= 2 && out.startsWith('"') && out.endsWith('"')) {
+    const inner = out.slice(1, -1).trim();
+    if (inner.includes('<mxfile')) {
+      out = inner;
+    }
+  }
+  return out;
+}
+
+function stripXmlComments(value) {
+  if (value == null) return null;
+  return String(value).replace(/<!--[\s\S]*?-->/g, '').trim();
+}
+
+// Extract the mxfile XML from either the parsed output text or the raw response body.
+function extractMxfileXml(outputText, responseJson) {
+  const candidate = stripCommonWrappers(String(outputText || '').trim());
+  const direct = extractXmlBetweenMxfileTags(candidate);
+  if (direct) return direct;
+  const fallback = stripCommonWrappers(String(responseJson || '').trim());
+  return extractXmlBetweenMxfileTags(fallback);
+}
+
+// Normalize the Responses API output into a plain text string for XML extraction.
+function collectResponseText(parsed) {
+  if (!parsed || typeof parsed !== 'object') return '';
+  if (typeof parsed.output_text === 'string') return parsed.output_text;
+  if (Array.isArray(parsed.output_text)) {
+    return parsed.output_text
+      .map((item) => (typeof item === 'string' ? item : item && item.text ? item.text : ''))
+      .join('\n')
+      .trim();
+  }
+  if (Array.isArray(parsed.output)) {
+    const parts = [];
+    parsed.output.forEach((item) => {
+      if (!item) return;
+      if (typeof item.text === 'string') {
+        parts.push(item.text);
+      }
+      if (Array.isArray(item.content)) {
+        item.content.forEach((chunk) => {
+          if (chunk && typeof chunk.text === 'string') {
+            parts.push(chunk.text);
+          }
+        });
+      }
+    });
+    return parts.join('\n').trim();
+  }
+  return '';
+}
+
+function normalizeAiConfig(rawConfig) {
+  const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+  const enabled = config.enabled === true || String(config.enabled || '').toLowerCase() === 'true';
+  const provider = String(config.aiProvider || 'openai').trim().toLowerCase();
+  const secretValue = String(config.secretValue || '').trim();
+  const model = String(config.model || AI_DEFAULT_MODEL).trim() || AI_DEFAULT_MODEL;
+  const apiBaseUrl = normalizeAiBaseUrl(config.apiBaseUrl || AI_DEFAULT_BASE_URL);
+  const allowedHostsRaw = String(config.allowedAiHosts || AI_DEFAULT_ALLOWED_HOSTS).trim();
+  const timeoutSecondsRaw = parseInt(String(config.timeoutSeconds || ''), 10);
+  const timeoutSeconds =
+    Number.isFinite(timeoutSecondsRaw) && timeoutSecondsRaw > 0
+      ? timeoutSecondsRaw
+      : AI_DEFAULT_TIMEOUT_SECONDS;
+  return {
+    enabled,
+    provider,
+    secretValue,
+    model,
+    apiBaseUrl,
+    allowedHostsRaw,
+    timeoutSeconds,
+  };
+}
+
+// Validate configuration and policy before we call the external AI service.
+async function assertAiConfig() {
+  const stored = (await storage.get(CONFIG_KEY)) || {};
+  const config = normalizeAiConfig(stored);
+  if (!config.enabled) {
+    return { ok: false, error: 'FlowMe AI is disabled by administrator.' };
+  }
+  if (config.provider !== 'openai') {
+    return { ok: false, error: `Unsupported AI provider: ${config.provider}` };
+  }
+  if (!config.secretValue) {
+    return { ok: false, error: 'AI secret value is not configured.' };
+  }
+  let baseUrl;
+  try {
+    baseUrl = new URL(config.apiBaseUrl);
+  } catch (e) {
+    return { ok: false, error: 'AI base URL is invalid.' };
+  }
+  if (baseUrl.protocol !== 'https:') {
+    return { ok: false, error: 'AI base URL must use HTTPS.' };
+  }
+  const allowedHosts = parseAiHostAllowlist(config.allowedHostsRaw || AI_DEFAULT_ALLOWED_HOSTS);
+  if (!isAiHostAllowed(baseUrl.hostname, allowedHosts)) {
+    return { ok: false, error: 'AI base URL is blocked by allowlist policy.' };
+  }
+  return { ok: true, config };
+}
+
+// Send the AI request with a strict timeout to keep Forge invocations bounded.
+async function postAiRequest(endpoint, apiKey, payloadJson, timeoutSeconds) {
+  const controller = new AbortController();
+  const timeoutMs = Math.max(1, timeoutSeconds) * 1000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: payloadJson,
+      signal: controller.signal,
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      return { ok: false, error: `AI request failed (${response.status}).`, body };
+    }
+    return { ok: true, body };
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      return { ok: false, error: 'AI request timed out. Please try again.' };
+    }
+    return { ok: false, error: 'AI request failed.' };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 
@@ -528,6 +940,122 @@ resolver.define('setConfig', async (req) => {
   }
   await storage.set(CONFIG_KEY, next);
   return { ok: true };
+});
+
+resolver.define('aiTextToDiagram', async (req) => {
+  const payload = req && req.payload ? req.payload : {};
+  const pageId = payload.pageId ? String(payload.pageId) : '';
+  const diagramName = payload.diagramName ? String(payload.diagramName) : '';
+  const text = payload.text ? String(payload.text) : '';
+  const mode = payload.mode ? String(payload.mode) : '';
+
+  if (!pageId || !diagramName) {
+    return { ok: false, error: 'Missing pageId or diagramName.' };
+  }
+  if (!text) {
+    return { ok: false, error: 'Missing text.' };
+  }
+  if (text.length > AI_MAX_TEXT_CHARS) {
+    return { ok: false, error: 'Text is too long.' };
+  }
+
+  const configCheck = await assertAiConfig();
+  if (!configCheck.ok) {
+    return { ok: false, error: configCheck.error };
+  }
+
+  const pageResp = await api.asUser().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+  if (!pageResp.ok) {
+    return { ok: false, error: 'Page not found or access denied.' };
+  }
+
+  const prompt = selectAiTextPrompt(mode);
+  const requestJson = buildResponsesRequestJsonText(configCheck.config.model, prompt, text);
+  const endpoint = `${configCheck.config.apiBaseUrl}/v1/responses`;
+  const response = await postAiRequest(
+    endpoint,
+    configCheck.config.secretValue,
+    requestJson,
+    configCheck.config.timeoutSeconds
+  );
+  if (!response.ok) {
+    return { ok: false, error: response.error };
+  }
+  let outputText = '';
+  try {
+    outputText = collectResponseText(JSON.parse(response.body));
+  } catch (e) {
+    outputText = '';
+  }
+  let xml = extractMxfileXml(outputText, response.body);
+  if (!xml) {
+    return { ok: false, error: 'AI response did not contain mxfile XML.' };
+  }
+  xml = stripXmlComments(stripCommonWrappers(xml) || xml);
+  return { ok: true, xml };
+});
+
+resolver.define('aiPngToDiagram', async (req) => {
+  const payload = req && req.payload ? req.payload : {};
+  const pageId = payload.pageId ? String(payload.pageId) : '';
+  const diagramName = payload.diagramName ? String(payload.diagramName) : '';
+  const imageDataUrl = payload.imageDataUrl ? String(payload.imageDataUrl) : '';
+
+  if (!pageId || !diagramName) {
+    return { ok: false, error: 'Missing pageId or diagramName.' };
+  }
+  if (!imageDataUrl) {
+    return { ok: false, error: 'Missing imageDataUrl.' };
+  }
+  if (imageDataUrl.length > AI_MAX_IMAGE_DATA_URL_CHARS) {
+    return { ok: false, error: 'Image is too large.' };
+  }
+  const lowerDataUrl = imageDataUrl.toLowerCase();
+  const isPng = lowerDataUrl.startsWith('data:image/png;base64,');
+  const isJpeg =
+    lowerDataUrl.startsWith('data:image/jpeg;base64,') ||
+    lowerDataUrl.startsWith('data:image/jpg;base64,');
+  if (!isPng && !isJpeg) {
+    return { ok: false, error: 'Only PNG/JPEG data URLs are supported.' };
+  }
+
+  const configCheck = await assertAiConfig();
+  if (!configCheck.ok) {
+    return { ok: false, error: configCheck.error };
+  }
+
+  const pageResp = await api.asUser().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+  if (!pageResp.ok) {
+    return { ok: false, error: 'Page not found or access denied.' };
+  }
+
+  const requestJson = buildResponsesRequestJsonImage(
+    configCheck.config.model,
+    AI_PROMPT_PNG,
+    imageDataUrl
+  );
+  const endpoint = `${configCheck.config.apiBaseUrl}/v1/responses`;
+  const response = await postAiRequest(
+    endpoint,
+    configCheck.config.secretValue,
+    requestJson,
+    configCheck.config.timeoutSeconds
+  );
+  if (!response.ok) {
+    return { ok: false, error: response.error };
+  }
+  let outputText = '';
+  try {
+    outputText = collectResponseText(JSON.parse(response.body));
+  } catch (e) {
+    outputText = '';
+  }
+  let xml = extractMxfileXml(outputText, response.body);
+  if (!xml) {
+    return { ok: false, error: 'AI response did not contain mxfile XML.' };
+  }
+  xml = stripXmlComments(stripCommonWrappers(xml) || xml);
+  return { ok: true, xml };
 });
 
 resolver.define('listDiagrams', async (req) => {

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke, view } from '@forge/bridge';
 import { DRAWIO_ORIGIN, DRAWIO_URL, extractSvgFromExport, extractXmlFromExport } from '../lib/drawio';
 
-export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion, buildTag }) {
+export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion, buildTag, initialXml }) {
   const [macroStatus, setMacroStatus] = useState('');
   const [editorReady, setEditorReady] = useState(false);
   const [editorBusy, setEditorBusy] = useState(false);
@@ -17,6 +17,12 @@ export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion,
     if (!pageId || !diagramName) return;
     console.log('FlowMe', buildTag, 'editor modal mount', { pageId, diagramName });
     setMacroStatus('');
+    if (initialXml && String(initialXml).trim()) {
+      setEditorXml(String(initialXml));
+      setEditorIsNew(false);
+      setEditorReady(false);
+      return;
+    }
     (async () => {
       try {
         const data = await invoke('loadDiagram', {
@@ -36,7 +42,7 @@ export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion,
         setMacroStatus(message);
       }
     })();
-  }, [pageId, diagramName, siteUrl]);
+  }, [pageId, diagramName, siteUrl, loadVersion, initialXml]);
 
   useEffect(() => {
     function onMessage(event) {

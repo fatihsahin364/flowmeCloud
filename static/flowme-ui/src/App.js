@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { view } from '@forge/bridge';
 import AdminSettings from './admin/AdminSettings';
+import AiTextModal from './macro/AiTextModal';
 import MacroConfig from './macro/MacroConfig';
 import MacroView from './macro/MacroView';
 import EditorModal from './macro/EditorModal';
@@ -75,6 +76,12 @@ export default function App() {
     return modalContext.mode === 'editor';
   }, [modalContext]);
 
+  const isAiTextModal = useMemo(() => {
+    if (!modalContext) return false;
+    return modalContext.mode === 'ai-text';
+  }, [modalContext]);
+
+
   const isSettingsPage = useMemo(() => {
     if (moduleKey === 'flowmecloud-settings') return true;
     try {
@@ -117,10 +124,22 @@ export default function App() {
         siteUrl={siteUrl}
         diagramName={diagramConfig.diagramName}
         loadVersion={modalContext && modalContext.loadVersion ? String(modalContext.loadVersion) : ''}
+        initialXml={modalContext && modalContext.initialXml ? String(modalContext.initialXml) : ''}
         buildTag={BUILD_TAG}
       />
     );
   }
+
+  if (isAiTextModal) {
+    console.log('FlowMe', BUILD_TAG, 'render AI text modal', modalContext);
+    return (
+      <AiTextModal
+        title={modalContext && modalContext.title ? String(modalContext.title) : ''}
+        mode={modalContext && modalContext.promptMode ? String(modalContext.promptMode) : ''}
+      />
+    );
+  }
+
 
   if (isSettingsPage) {
     console.log('FlowMe', BUILD_TAG, 'render admin settings');
