@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, Modal, view } from '@forge/bridge';
+import icon64 from '../assets/icon-64.png';
 
 export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }) {
   const [diagram, setDiagram] = useState(initialDiagram);
@@ -176,13 +177,15 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
   };
 
   const hasBorder = Boolean(diagram.border);
+  const isEmpty = !svgUrl;
   const wrapperClass = useMemo(() => {
     const classes = ['flowme-diagram-wrapper'];
     classes.push(diagram.width ? 'flowme-has-width' : 'flowme-auto-width');
     if (hasBorder) classes.push('flowme-has-border');
+    if (isEmpty && !diagram.width) classes.push('flowme-empty-state');
     if (isEditing) classes.push('flowme-editor-mode');
     return classes.join(' ');
-  }, [diagram.width, hasBorder, isEditing]);
+  }, [diagram.width, hasBorder, isEditing, isEmpty]);
   const showPreviewToolbar = !isEditing && Boolean(diagram.diagramName);
   const zoomIn = () => setZoom((value) => Math.min(2, Math.round((value + 0.1) * 10) / 10));
   const zoomOut = () => setZoom((value) => Math.max(0.5, Math.round((value - 0.1) * 10) / 10));
@@ -294,7 +297,10 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
             </div>
           </div>
         ) : null}
-        <div className="flowme-diagram-preview" style={previewStyle}>
+        <div
+          className={`flowme-diagram-preview${isEmpty ? ' flowme-diagram-preview-empty' : ''}`}
+          style={previewStyle}
+        >
           {svgUrl ? (
             <img
               ref={imgRef}
@@ -309,8 +315,9 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
               }}
             />
           ) : (
-            <div className="flowme-diagram-preview-empty">
-              <em>No diagram saved yet.</em>
+            <div className="flowme-empty-content">
+              <img className="flowme-empty-icon" src={icon64} width="64" height="64" alt="FlowMe" />
+              <span className="flowme-empty-title">FlowMe diagram</span>
             </div>
           )}
         </div>

@@ -267,7 +267,7 @@
   transition: transform 120ms ease;
 }
 
-.flowme-diagram-wrapper.flowme-has-width .flowme-diagram-preview img {
+.flowme-diagram-wrapper.flowme-has-width .flowme-diagram-preview img:not(.flowme-empty-icon) {
   width: 100%;
 }
 
@@ -277,10 +277,49 @@
   justify-content: center;
   min-height: 64px;
   color: #6b778c;
-  font-style: italic;
+  font-style: normal;
   background: #fafbfc;
 }
 
 .flowme-diagram-box:hover .flowme-diagram-preview-empty {
   padding-top: 44px;
+}
+
+.flowme-diagram-wrapper.flowme-empty-state .flowme-diagram-box {
+  width: 240px;
+  max-width: 240px;
+}
+
+.flowme-diagram-wrapper.flowme-empty-state .flowme-diagram-preview {
+  min-height: 160px;
+  height: 160px;
+  max-height: 160px;
+}
+
+.flowme-empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  color: #44546f;
+  text-align: center;
+}
+
+.flowme-empty-icon {
+  width: 64px;
+  height: 64px;
+  max-width: 64px;
+  max-height: 64px;
+  display: block;
+  object-fit: contain;
+}
+
+.flowme-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }

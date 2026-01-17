@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { invoke, Modal, view } from '@forge/bridge';
+import { invoke, view } from '@forge/bridge';
 import icon32 from '../assets/icon-32.png';
 
 const DIAGRAM_NAME_MAX = 64;
@@ -181,23 +181,6 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
     }
   };
 
-  const openEditorModal = async (name, onClose) => {
-    if (!pageId || !name) return;
-    const modal = new Modal({
-      resource: 'flowme-ui',
-      size: 'max',
-      onClose,
-      context: {
-        mode: 'editor',
-        pageId,
-        diagramName: name,
-        width: diagram.width,
-        border: diagram.border,
-      },
-    });
-    await modal.open();
-  };
-
   const validation = useMemo(() => {
     const nameCheck = validateDiagramName(diagram.diagramName);
     if (!nameCheck.ok) {
@@ -216,7 +199,9 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
     return { ok: true, value: nameCheck.value, width: widthCheck.value };
   }, [diagram.diagramName, diagram.width, existingNames, isEdit]);
 
-  const hintText = isEdit ? '' : 'Insert will add the macro and open the editor.';
+  const hintText = isEdit
+    ? ''
+    : 'Insert will add the macro. Use the hover toolbar to open the editor.';
 
   return (
     <div style={{ padding: 12, maxWidth: 520, fontSize: 13, lineHeight: 1.3 }}>
@@ -328,27 +313,12 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
                 });
                 return;
               }
-              setMacroStatus('Opening editor...');
-              await openEditorModal(validation.value, async (payload) => {
-                if (!payload || !payload.refreshed) {
-                  setMacroStatus('Insert cancelled.');
-                  return;
-                }
-                try {
-                  await view.submit({
-                    config: {
-                      diagramName: validation.value,
-                      width: validation.width,
-                      border: diagram.border,
-                    },
-                  });
-                } catch (submitError) {
-                  const submitMessage =
-                    submitError && submitError.message
-                      ? submitError.message
-                      : 'Failed to insert diagram.';
-                  setMacroStatus(submitMessage);
-                }
+              await view.submit({
+                config: {
+                  diagramName: validation.value,
+                  width: validation.width,
+                  border: diagram.border,
+                },
               });
             } catch (e) {
               const message = e && e.message ? e.message : 'Failed to save macro settings.';
