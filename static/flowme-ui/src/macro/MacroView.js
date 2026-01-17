@@ -317,7 +317,7 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
       </div>
       {isEditing ? (
         <div style={{ marginTop: 8, fontSize: 12, color: '#6b778c' }}>
-          To change diagram settings (name, width, border), use Confluence macro settings.
+          To change diagram settings (width, border), use Confluence macro settings.
         </div>
       ) : null}
     </div>
