@@ -272,6 +272,46 @@
   transition: transform 120ms ease;
 }
 
+.flowme-license-watermark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.flowme-license-watermark-corner {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.65);
+  color: rgba(9, 30, 66, 0.6);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 0 0 1px rgba(9, 30, 66, 0.08);
+}
+
+.flowme-license-watermark-tl {
+  top: 6px;
+  left: 6px;
+}
+
+.flowme-license-watermark-tr {
+  top: 6px;
+  right: 6px;
+}
+
+.flowme-license-watermark-bl {
+  bottom: 6px;
+  left: 6px;
+}
+
+.flowme-license-watermark-br {
+  bottom: 6px;
+  right: 6px;
+}
+
 .flowme-diagram-wrapper.flowme-has-width .flowme-diagram-preview img:not(.flowme-empty-icon) {
   width: 100%;
 }

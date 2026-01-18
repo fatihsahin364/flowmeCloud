@@ -1,10 +1,13 @@
 import Resolver from '@forge/resolver';
-import api, { route, storage } from '@forge/api';
+import api, { license, route, storage } from '@forge/api';
 
 const resolver = new Resolver();
 
 // Central storage key for FlowMe settings to keep reads/writes consistent.
 const CONFIG_KEY = 'flowme.config';
+const LICENSE_UNLICENSED_SINCE_KEY = 'flowme.license.unlicensedSince';
+const LICENSE_GRACE_DAYS = 30;
+const LICENSE_WATERMARK_TEXT = 'Yelloware Flowme diagram';
 
 const DRAWIO_XML_SUFFIX = '.mxfile';
 const DRAWIO_SVG_SUFFIX = '.svg';
@@ -171,6 +174,65 @@ const AI_PROMPT_PNG = [
   '- Return a single mxfile that opens directly in diagrams.net.',
   '- No truncation. If you cannot fully reconstruct, still return the best valid mxfile XML you can.',
 ].join('\n');
+
+// Evaluate the Forge Marketplace license and derive FlowMe feature flags.
+async function resolveLicenseStatus() {
+  const now = Date.now();
+  let licenseInfo = null;
+  try {
+    licenseInfo = await license.get();
+  } catch (e) {
+    licenseInfo = null;
+  }
+
+  // Forge license payloads have changed across runtimes, so check the common fields safely.
+  const isActive =
+    licenseInfo &&
+    (licenseInfo.active === true ||
+      licenseInfo.isActive === true ||
+      String(licenseInfo.status || '').toLowerCase() === 'active' ||
+      String(licenseInfo.type || '').toLowerCase() === 'developer');
+
+  if (isActive) {
+    // Clear any unlicensed marker so the grace window restarts if the license lapses later.
+    await storage.delete(LICENSE_UNLICENSED_SINCE_KEY);
+    return {
+      ok: true,
+      status: 'active',
+      watermarkEnabled: false,
+      allowCreateNew: true,
+      watermarkText: LICENSE_WATERMARK_TEXT,
+      message: '',
+    };
+  }
+
+  // Track the first time we detect an unlicensed state so we can enforce a grace period.
+  const storedSince = await storage.get(LICENSE_UNLICENSED_SINCE_KEY);
+  const since =
+    typeof storedSince === 'number'
+      ? storedSince
+      : storedSince
+      ? parseInt(String(storedSince), 10)
+      : null;
+  const effectiveSince = Number.isFinite(since) ? since : now;
+  if (!Number.isFinite(since)) {
+    await storage.set(LICENSE_UNLICENSED_SINCE_KEY, effectiveSince);
+  }
+
+  const graceMs = LICENSE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+  const graceUntil = effectiveSince + graceMs;
+  const inGrace = now <= graceUntil;
+  return {
+    ok: true,
+    status: inGrace ? 'grace' : 'hard-expired',
+    watermarkEnabled: true,
+    allowCreateNew: inGrace,
+    watermarkText: LICENSE_WATERMARK_TEXT,
+    message: inGrace
+      ? 'FlowMe license is inactive. Watermarking is enabled during the grace period.'
+      : 'FlowMe license expired. Creating new diagrams is disabled.',
+  };
+}
 
 async function getActorInfo() {
   try {
@@ -996,6 +1058,11 @@ resolver.define('getText', (req) => {
   return 'Hello, world!';
 });
 
+resolver.define('getLicenseStatus', async () => {
+  // Expose a slim license summary to the frontend so UI can react immediately.
+  return resolveLicenseStatus();
+});
+
 resolver.define('getConfig', async () => {
   // Return persisted configuration for Custom UI consumers (macro/editor).
   const stored = await storage.get(CONFIG_KEY);
@@ -1345,6 +1412,13 @@ resolver.define('saveDiagram', async (req) => {
     }
     if (!xml && !svg) {
       return { ok: false, error: 'No diagram content provided.' };
+    }
+    if (createOnly) {
+      // Enforce licensing at the point of first creation, while still allowing edits to existing diagrams.
+      const licenseStatus = await resolveLicenseStatus();
+      if (!licenseStatus.allowCreateNew) {
+        return { ok: false, error: licenseStatus.message || 'FlowMe license expired.' };
+      }
     }
 
     const actor = await getActorInfo();

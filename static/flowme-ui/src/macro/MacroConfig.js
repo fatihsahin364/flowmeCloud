@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { invoke, view } from '@forge/bridge';
 import icon32 from '../assets/icon-32.png';
+import { fetchLicenseStatus } from '../lib/license';
 
 const DIAGRAM_NAME_MAX = 64;
 let supportsUnicodeProps = false;
@@ -99,6 +100,7 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
   const [existingNames, setExistingNames] = useState([]);
   const [loadingNames, setLoadingNames] = useState(false);
   const [nameTouched, setNameTouched] = useState(false);
+  const [licenseStatus, setLicenseStatus] = useState(null);
 
   useEffect(() => {
     console.log('FlowMe', 'macro config mount', initialDiagram);
@@ -125,6 +127,20 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
     initialDiagram.width,
     initialDiagram.border,
   ]);
+
+  useEffect(() => {
+    // The create-new gating lives in licensing, so fetch it once when this view mounts.
+    let alive = true;
+    (async () => {
+      const status = await fetchLicenseStatus();
+      if (alive) {
+        setLicenseStatus(status);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!pageId || isEdit) return;
@@ -202,6 +218,12 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
   const hintText = isEdit
     ? ''
     : 'Insert will add the macro. Use the hover toolbar to open the editor.';
+  const createBlocked =
+    !isEdit && licenseStatus && licenseStatus.allowCreateNew === false;
+  const createBlockedMessage =
+    createBlocked && licenseStatus && licenseStatus.message
+      ? String(licenseStatus.message)
+      : 'FlowMe license expired. Creating new diagrams is disabled.';
 
   return (
     <div style={{ padding: 12, maxWidth: 520, fontSize: 13, lineHeight: 1.3 }}>
@@ -212,6 +234,7 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
         </h3>
       </div>
       {macroStatus ? <div style={{ marginBottom: 12 }}>{macroStatus}</div> : null}
+      {createBlocked ? <div style={{ marginBottom: 12 }}>{createBlockedMessage}</div> : null}
       <div style={{ display: 'grid', gap: 8 }}>
         <label>
           Diagram name
@@ -293,6 +316,10 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
           type="button"
           onClick={async () => {
             setMacroStatus('');
+            if (createBlocked) {
+              setMacroStatus(createBlockedMessage);
+              return;
+            }
             if (!validation.ok) {
               setMacroStatus(validation.error || 'Please fix the errors.');
               return;
@@ -325,7 +352,7 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
               setMacroStatus(message);
             }
           }}
-          disabled={!validation.ok}
+          disabled={!validation.ok || createBlocked}
         >
           {isEdit ? 'Save' : 'Insert diagram'}
         </button>

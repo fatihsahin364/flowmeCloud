@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, Modal, showFlag, view } from '@forge/bridge';
 import icon64 from '../assets/icon-64.png';
+import { fetchLicenseStatus } from '../lib/license';
 
 export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }) {
   const [diagram, setDiagram] = useState(initialDiagram);
@@ -14,6 +15,7 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [aiMenuPos, setAiMenuPos] = useState({ left: 0, top: 0 });
   const [aiBusy, setAiBusy] = useState(false);
+  const [licenseStatus, setLicenseStatus] = useState(null);
   const imgRef = useRef(null);
   const boxRef = useRef(null);
   const aiButtonRef = useRef(null);
@@ -31,6 +33,20 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
     setBaseSize({ width: 0, height: 0 });
     setAiMenuOpen(false);
   }, [initialDiagram.diagramName, initialDiagram.width, initialDiagram.border]);
+
+  useEffect(() => {
+    // License status drives watermark behavior, so grab it once on mount.
+    let alive = true;
+    (async () => {
+      const status = await fetchLicenseStatus();
+      if (alive) {
+        setLicenseStatus(status);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -643,6 +659,11 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
 
   const hasBorder = Boolean(diagram.border);
   const isEmpty = !svgUrl;
+  const watermarkText =
+    licenseStatus && licenseStatus.watermarkText
+      ? String(licenseStatus.watermarkText)
+      : 'FlowMe license required';
+  const showWatermark = Boolean(svgUrl && licenseStatus && licenseStatus.watermarkEnabled);
   const wrapperClass = useMemo(() => {
     const classes = ['flowme-diagram-wrapper'];
     classes.push(diagram.width ? 'flowme-has-width' : 'flowme-auto-width');
@@ -812,6 +833,22 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
               <span className="flowme-empty-title">FlowMe diagram</span>
             </div>
           )}
+          {showWatermark ? (
+            <div className="flowme-license-watermark" aria-hidden="true">
+              <div className="flowme-license-watermark-corner flowme-license-watermark-tl">
+                {watermarkText}
+              </div>
+              <div className="flowme-license-watermark-corner flowme-license-watermark-tr">
+                {watermarkText}
+              </div>
+              <div className="flowme-license-watermark-corner flowme-license-watermark-bl">
+                {watermarkText}
+              </div>
+              <div className="flowme-license-watermark-corner flowme-license-watermark-br">
+                {watermarkText}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       {isEditing ? (
