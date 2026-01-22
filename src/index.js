@@ -1,5 +1,5 @@
 import Resolver from '@forge/resolver';
-import api, { license, route, storage } from '@forge/api';
+import api, { getAppContext, route, storage } from '@forge/api';
 
 const resolver = new Resolver();
 
@@ -176,14 +176,33 @@ const AI_PROMPT_PNG = [
 ].join('\n');
 
 // Evaluate the Forge Marketplace license and derive FlowMe feature flags.
-async function resolveLicenseStatus() {
+async function resolveLicenseStatus(contextLicense) {
   const now = Date.now();
   let licenseInfo = null;
   try {
-    licenseInfo = await license.get();
+    // Prefer the invocation context license (resolver calls) for the most accurate state.
+    if (contextLicense && typeof contextLicense === 'object') {
+      licenseInfo = contextLicense;
+    } else {
+      // Fallback to the app context when no invocation context is available.
+      const appContext = await getAppContext();
+      licenseInfo = appContext && appContext.license ? appContext.license : null;
+    }
   } catch (e) {
     licenseInfo = null;
   }
+  // Log a trimmed license snapshot to help diagnose Marketplace state during dev tests.
+  console.log('FlowMe license raw', {
+    hasLicense: Boolean(licenseInfo),
+    status: licenseInfo ? licenseInfo.status : undefined,
+    type: licenseInfo ? licenseInfo.type : undefined,
+    active: licenseInfo ? licenseInfo.active : undefined,
+    isActive: licenseInfo ? licenseInfo.isActive : undefined,
+    plan: licenseInfo ? licenseInfo.plan : undefined,
+    isTrial: licenseInfo ? licenseInfo.isTrial : undefined,
+    billingPeriod: licenseInfo ? licenseInfo.billingPeriod : undefined,
+    maximumNumberOfUsers: licenseInfo ? licenseInfo.maximumNumberOfUsers : undefined,
+  });
 
   // Forge license payloads have changed across runtimes, so check the common fields safely.
   const isActive =
@@ -192,6 +211,37 @@ async function resolveLicenseStatus() {
       licenseInfo.isActive === true ||
       String(licenseInfo.status || '').toLowerCase() === 'active' ||
       String(licenseInfo.type || '').toLowerCase() === 'developer');
+
+  // Pull any metadata fields that are available so we can show them in the admin UI.
+  const licenseMeta = {
+    rawStatus: licenseInfo ? String(licenseInfo.status || '') : '',
+    rawType: licenseInfo ? String(licenseInfo.type || '') : '',
+    rawPlan: licenseInfo ? String(licenseInfo.plan || '') : '',
+    isActive: Boolean(isActive),
+    isTrial: licenseInfo ? Boolean(licenseInfo.isTrial || licenseInfo.trial) : false,
+    // User and date fields vary by runtime; read the common candidates defensively.
+    maximumUsers: licenseInfo
+      ? licenseInfo.maximumNumberOfUsers ||
+        (licenseInfo.license && licenseInfo.license.maximumNumberOfUsers) ||
+        null
+      : null,
+    billingPeriod: licenseInfo ? String(licenseInfo.billingPeriod || '') : '',
+    purchaseDate: licenseInfo
+      ? licenseInfo.purchaseDate ||
+        (licenseInfo.license && licenseInfo.license.purchaseDate) ||
+        null
+      : null,
+    subscriptionEndDate: licenseInfo
+      ? licenseInfo.subscriptionEndDate ||
+        (licenseInfo.license && licenseInfo.license.subscriptionEndDate) ||
+        null
+      : null,
+    maintenanceEndDate: licenseInfo
+      ? licenseInfo.maintenanceEndDate ||
+        (licenseInfo.license && licenseInfo.license.maintenanceEndDate) ||
+        null
+      : null,
+  };
 
   if (isActive) {
     // Clear any unlicensed marker so the grace window restarts if the license lapses later.
@@ -203,6 +253,10 @@ async function resolveLicenseStatus() {
       allowCreateNew: true,
       watermarkText: LICENSE_WATERMARK_TEXT,
       message: '',
+      checkedAt: now,
+      graceUntil: null,
+      unlicensedSince: null,
+      license: licenseMeta,
     };
   }
 
@@ -231,6 +285,10 @@ async function resolveLicenseStatus() {
     message: inGrace
       ? 'FlowMe license is inactive. Watermarking is enabled during the grace period.'
       : 'FlowMe license expired. Creating new diagrams is disabled.',
+    checkedAt: now,
+    graceUntil,
+    unlicensedSince: effectiveSince,
+    license: licenseMeta,
   };
 }
 
@@ -1058,9 +1116,17 @@ resolver.define('getText', (req) => {
   return 'Hello, world!';
 });
 
-resolver.define('getLicenseStatus', async () => {
+resolver.define('getLicenseStatus', async (req) => {
   // Expose a slim license summary to the frontend so UI can react immediately.
-  return resolveLicenseStatus();
+  const contextLicense = req && req.context ? req.context.license : null;
+  return resolveLicenseStatus(contextLicense);
+});
+
+resolver.define('refreshLicenseStatus', async (req) => {
+  // Clear the grace-period marker so the next check re-evaluates from scratch.
+  await storage.delete(LICENSE_UNLICENSED_SINCE_KEY);
+  const contextLicense = req && req.context ? req.context.license : null;
+  return resolveLicenseStatus(contextLicense);
 });
 
 resolver.define('getConfig', async () => {
@@ -1415,7 +1481,8 @@ resolver.define('saveDiagram', async (req) => {
     }
     if (createOnly) {
       // Enforce licensing at the point of first creation, while still allowing edits to existing diagrams.
-      const licenseStatus = await resolveLicenseStatus();
+      const contextLicense = req && req.context ? req.context.license : null;
+      const licenseStatus = await resolveLicenseStatus(contextLicense);
       if (!licenseStatus.allowCreateNew) {
         return { ok: false, error: licenseStatus.message || 'FlowMe license expired.' };
       }
