@@ -156,7 +156,6 @@ export default function AdminSettings() {
   return (
     <div style={{ padding: 24, maxWidth: 760 }}>
       <h2>FlowMe Cloud Settings</h2>
-      <p>Configure the AI provider used for PNG or text to diagram features.</p>
 
       <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
         <button
@@ -191,6 +190,9 @@ export default function AdminSettings() {
 
       {activeTab === 'license' ? (
         <div style={{ marginBottom: 20, padding: 12, border: '1px solid #dfe1e6', borderRadius: 6 }}>
+          <p style={{ marginTop: 0 }}>
+            Review the current Marketplace license state and refresh cached values after testing.
+          </p>
           <h3 style={{ marginTop: 0 }}>License status</h3>
           {licenseStatus ? (
             <div style={{ display: 'grid', gap: 6 }}>
@@ -259,6 +261,9 @@ export default function AdminSettings() {
 
       {activeTab === 'ai' ? (
         <form onSubmit={onSubmit}>
+        <p style={{ marginTop: 0 }}>
+          Configure the AI provider used for PNG or text to diagram features.
+        </p>
         <div style={{ marginBottom: 16 }}>
           <label>
             <input
