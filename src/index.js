@@ -181,6 +181,33 @@ const AI_PROMPT_PNG = [
   '- No truncation. If you cannot fully reconstruct, still return the best valid mxfile XML you can.',
 ].join('\n');
 
+// Keep logs quiet in production; resolve environment once and cache it.
+let flowmeEnvResolved = false;
+let flowmeIsProdEnv = true;
+async function resolveFlowmeEnvironment() {
+  if (flowmeEnvResolved) return;
+  flowmeEnvResolved = true;
+  try {
+    const ctx = await getAppContext();
+    const env = ctx && ctx.environment ? String(ctx.environment) : '';
+    flowmeIsProdEnv = env.toLowerCase() === 'production';
+  } catch (e) {
+    // Default to production-safe logging if environment lookup fails.
+    flowmeIsProdEnv = true;
+  }
+}
+
+function logInfo(...args) {
+  if (!flowmeEnvResolved) {
+    // Fire-and-forget environment resolution; skip logs until we know the environment.
+    resolveFlowmeEnvironment();
+    return;
+  }
+  if (!flowmeIsProdEnv) {
+    console.log(...args);
+  }
+}
+
 // Evaluate the Forge Marketplace license and derive FlowMe feature flags.
 async function resolveLicenseStatus(contextLicense) {
   const now = Date.now();
@@ -202,7 +229,7 @@ async function resolveLicenseStatus(contextLicense) {
     const ctx = await getAppContext();
     const envType = ctx && ctx.environment ? String(ctx.environment) : '';
     if (envType && envType.toLowerCase() !== 'production') {
-      console.log('FlowMe license raw', {
+      logInfo('FlowMe license raw', {
         hasLicense: Boolean(licenseInfo),
         status: licenseInfo ? licenseInfo.status : undefined,
         type: licenseInfo ? licenseInfo.type : undefined,
@@ -910,7 +937,7 @@ async function uploadAttachment(pageId, filename, contentType, content, mode, at
     }
     const auth = response.headers.get('www-authenticate') || '';
     const details = auth ? ` | www-authenticate: ${auth}` : '';
-    console.log('FlowMe attachment upload failed', requestMeta);
+    logInfo('FlowMe attachment upload failed', requestMeta);
     throw new Error(
       `Attachment upload failed ${response.status}: ${text}${details} | request: ${JSON.stringify(
         requestMeta
@@ -1177,13 +1204,13 @@ async function cleanupOrphanAttachments(pageId) {
       deleted += 1;
     }
   }
-  console.log('FlowMe cleanup done', { pageId, deleted, kept, total: attachments.length, candidates });
+  logInfo('FlowMe cleanup done', { pageId, deleted, kept, total: attachments.length, candidates });
   return { deleted, kept, total: attachments.length, candidates };
 }
 
 resolver.define('getText', (req) => {
   // Simple placeholder resolver so the macro UI still has a working bridge call.
-  console.log(req);
+  logInfo(req);
   return 'Hello, world!';
 });
 
@@ -1245,7 +1272,7 @@ async function startAiTextToDiagramInternal(payload) {
   const diagramName = payload.diagramName ? String(payload.diagramName) : '';
   const text = payload.text ? String(payload.text) : '';
   const mode = payload.mode ? String(payload.mode) : '';
-  console.log('FlowMe AI text start', { pageId, diagramName, mode, startedAt });
+  logInfo('FlowMe AI text start', { pageId, diagramName, mode, startedAt });
 
   if (!pageId || !diagramName) {
     return { ok: false, error: 'Missing pageId or diagramName.' };
@@ -1290,7 +1317,7 @@ async function startAiTextToDiagramInternal(payload) {
   let xml = extractMxfileXml(outputText, response.body);
   if (xml) {
     xml = stripXmlComments(stripCommonWrappers(xml) || xml);
-    console.log('FlowMe AI text done sync', {
+    logInfo('FlowMe AI text done sync', {
       pageId,
       diagramName,
       mode,
@@ -1300,7 +1327,7 @@ async function startAiTextToDiagramInternal(payload) {
   }
   const responseId = extractResponseId(parsed);
   if (!responseId) {
-    console.log('FlowMe AI text missing job id', {
+    logInfo('FlowMe AI text missing job id', {
       pageId,
       diagramName,
       mode,
@@ -1309,7 +1336,7 @@ async function startAiTextToDiagramInternal(payload) {
     return { ok: false, error: 'AI response did not return a job id.' };
   }
   await saveAiJob(responseId, { pageId, diagramName, type: 'text' });
-  console.log('FlowMe AI text queued', {
+  logInfo('FlowMe AI text queued', {
     pageId,
     diagramName,
     mode,
@@ -1334,7 +1361,7 @@ async function startAiPngToDiagramInternal(payload) {
   const pageId = payload.pageId ? String(payload.pageId) : '';
   const diagramName = payload.diagramName ? String(payload.diagramName) : '';
   const imageDataUrl = payload.imageDataUrl ? String(payload.imageDataUrl) : '';
-  console.log('FlowMe AI png start', { pageId, diagramName, startedAt });
+  logInfo('FlowMe AI png start', { pageId, diagramName, startedAt });
 
   if (!pageId || !diagramName) {
     return { ok: false, error: 'Missing pageId or diagramName.' };
@@ -1390,7 +1417,7 @@ async function startAiPngToDiagramInternal(payload) {
   let xml = extractMxfileXml(outputText, response.body);
   if (xml) {
     xml = stripXmlComments(stripCommonWrappers(xml) || xml);
-    console.log('FlowMe AI png done sync', {
+    logInfo('FlowMe AI png done sync', {
       pageId,
       diagramName,
       durationMs: Date.now() - startedAt,
@@ -1399,7 +1426,7 @@ async function startAiPngToDiagramInternal(payload) {
   }
   const responseId = extractResponseId(parsed);
   if (!responseId) {
-    console.log('FlowMe AI png missing job id', {
+    logInfo('FlowMe AI png missing job id', {
       pageId,
       diagramName,
       durationMs: Date.now() - startedAt,
@@ -1407,7 +1434,7 @@ async function startAiPngToDiagramInternal(payload) {
     return { ok: false, error: 'AI response did not return a job id.' };
   }
   await saveAiJob(responseId, { pageId, diagramName, type: 'png' });
-  console.log('FlowMe AI png queued', {
+  logInfo('FlowMe AI png queued', {
     pageId,
     diagramName,
     jobId: responseId,
@@ -1463,7 +1490,7 @@ resolver.define('checkAiJobStatus', async (req) => {
   if (xml) {
     xml = stripXmlComments(stripCommonWrappers(xml) || xml);
     await deleteAiJob(jobId);
-    console.log('FlowMe AI job done', {
+    logInfo('FlowMe AI job done', {
       jobId,
       status: extractResponseStatus(parsed),
       durationMs: Date.now() - pollStartedAt,
@@ -1472,14 +1499,14 @@ resolver.define('checkAiJobStatus', async (req) => {
   }
   if (isResponseComplete(parsed)) {
     await deleteAiJob(jobId);
-    console.log('FlowMe AI job complete without xml', {
+    logInfo('FlowMe AI job complete without xml', {
       jobId,
       status: extractResponseStatus(parsed),
       durationMs: Date.now() - pollStartedAt,
     });
     return { ok: false, error: 'AI response did not contain mxfile XML.' };
   }
-  console.log('FlowMe AI job pending', {
+  logInfo('FlowMe AI job pending', {
     jobId,
     status: extractResponseStatus(parsed),
     durationMs: Date.now() - pollStartedAt,
@@ -1654,7 +1681,7 @@ resolver.define('listDiagramVersions', async (req) => {
     );
     const attachmentId = (xmlMeta && xmlMeta.id) || (svgMeta && svgMeta.id) || '';
     if (!attachmentId) {
-      console.log('FlowMe list versions no attachment', { pageId, diagramName });
+      logInfo('FlowMe list versions no attachment', { pageId, diagramName });
       return { ok: true, versions: [] };
     }
 
@@ -1731,10 +1758,10 @@ resolver.define('listDiagramVersions', async (req) => {
       by: item.by || (item.authorId ? authorMap.get(item.authorId) || '' : ''),
     }));
 
-    console.log('FlowMe list versions ok', { pageId, diagramName, count: versions.length });
+    logInfo('FlowMe list versions ok', { pageId, diagramName, count: versions.length });
     return { ok: true, versions };
   } catch (e) {
-    console.log('FlowMe list versions failed', e && e.message ? e.message : e);
+    logInfo('FlowMe list versions failed', e && e.message ? e.message : e);
     return { ok: false, error: e && e.message ? e.message : 'Failed to list versions.' };
   }
 });
@@ -1755,7 +1782,7 @@ export async function pageUpdatedHandler(event) {
   try {
     const pageId = extractPageIdFromEvent(event);
     if (!pageId) {
-      console.log('FlowMe pageUpdatedHandler missing pageId', {
+      logInfo('FlowMe pageUpdatedHandler missing pageId', {
         keys: event ? Object.keys(event) : null,
         event,
       });
@@ -1766,7 +1793,7 @@ export async function pageUpdatedHandler(event) {
       (event && event.context && event.context.updateTrigger) ||
       '';
     const eventType = (event && event.eventType) || '';
-    console.log('FlowMe pageUpdatedHandler running', {
+    logInfo('FlowMe pageUpdatedHandler running', {
       pageId,
       eventType,
       updateTrigger,
@@ -1777,7 +1804,7 @@ export async function pageUpdatedHandler(event) {
       allowCleanup = true;
     } else if (updateTrigger === 'edit_page') {
       const hasDraft = await hasDraftForPage(pageId);
-      console.log('FlowMe pageUpdatedHandler edit_page draft check', {
+      logInfo('FlowMe pageUpdatedHandler edit_page draft check', {
         pageId,
         hasDraft,
       });
@@ -1786,7 +1813,7 @@ export async function pageUpdatedHandler(event) {
       }
     }
     if (!allowCleanup) {
-      console.log('FlowMe pageUpdatedHandler skipped: updateTrigger', {
+      logInfo('FlowMe pageUpdatedHandler skipped: updateTrigger', {
         pageId,
         eventType,
         updateTrigger,
@@ -1795,7 +1822,7 @@ export async function pageUpdatedHandler(event) {
     }
     await cleanupOrphanAttachments(String(pageId));
   } catch (e) {
-    console.log('FlowMe pageUpdatedHandler failed', e && e.message ? e.message : e);
+    logInfo('FlowMe pageUpdatedHandler failed', e && e.message ? e.message : e);
   }
 }
 
