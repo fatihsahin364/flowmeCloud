@@ -1494,7 +1494,8 @@ resolver.define('listDiagrams', async (req) => {
     if (!pageId) {
       return { ok: false, error: 'Missing pageId.', names: [] };
     }
-    const attachments = await listAttachmentsV2(pageId, 'app');
+    // Use the caller's user context so permission checks are enforced.
+    const attachments = await listAttachmentsV2(pageId, 'user');
     const names = new Set();
     attachments.forEach((attachment) => {
       const title = attachment && attachment.title ? String(attachment.title) : '';
