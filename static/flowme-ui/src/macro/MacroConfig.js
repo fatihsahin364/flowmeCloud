@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { invoke, view } from '@forge/bridge';
 import icon32 from '../assets/icon-32.png';
 import { fetchLicenseStatus } from '../lib/license';
+import { mapPermissionError } from '../lib/permissions';
 
 const DIAGRAM_NAME_MAX = 64;
 let supportsUnicodeProps = false;
@@ -148,6 +149,11 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
     (async () => {
       try {
         const result = await invoke('listDiagrams', { pageId });
+        if (result && result.ok === false) {
+          setMacroStatus(mapPermissionError(result.error || 'Failed to list diagrams.'));
+          setExistingNames([]);
+          return;
+        }
         if (result && result.ok && Array.isArray(result.names)) {
           setExistingNames(result.names);
           const suggested = computeSuggestedDiagramName(result.names);
@@ -162,6 +168,7 @@ export default function MacroConfig({ initialDiagram, pageId, isEdit }) {
         }
       } catch (e) {
         setExistingNames([]);
+        setMacroStatus(mapPermissionError(e && e.message ? e.message : 'Failed to list diagrams.'));
       } finally {
         setLoadingNames(false);
       }

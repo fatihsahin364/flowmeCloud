@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { invoke, view } from '@forge/bridge';
 import { DRAWIO_ORIGIN, DRAWIO_URL, extractSvgFromExport, extractXmlFromExport } from '../lib/drawio';
+import { mapPermissionError } from '../lib/permissions';
 
 export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion, buildTag, initialXml }) {
   const [macroStatus, setMacroStatus] = useState('');
@@ -39,7 +40,7 @@ export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion,
         setEditorReady(false);
       } catch (e) {
         const message = e && e.message ? e.message : 'Failed to open the editor.';
-        setMacroStatus(message);
+        setMacroStatus(mapPermissionError(message));
       }
     })();
   }, [pageId, diagramName, siteUrl, loadVersion, initialXml]);
@@ -140,7 +141,7 @@ export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion,
       });
       if (!res || res.ok !== true) {
         const message = res && res.error ? res.error : 'Failed to save diagram.';
-        setMacroStatus(message);
+        setMacroStatus(mapPermissionError(message));
         return;
       }
       setMacroStatus('Diagram saved.');
@@ -151,7 +152,7 @@ export default function EditorModal({ pageId, diagramName, siteUrl, loadVersion,
       });
     } catch (e) {
       const message = e && e.message ? e.message : 'Failed to save diagram.';
-      setMacroStatus(message);
+      setMacroStatus(mapPermissionError(message));
     } finally {
       setEditorBusy(false);
       if (pendingCloseRef.current) {

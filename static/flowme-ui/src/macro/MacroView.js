@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, Modal, showFlag, view } from '@forge/bridge';
 import icon64 from '../assets/icon-64.png';
 import { fetchLicenseStatus } from '../lib/license';
+import { mapPermissionError } from '../lib/permissions';
 
 export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }) {
   const [diagram, setDiagram] = useState(initialDiagram);
@@ -70,6 +71,12 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
         pageId,
         diagramName: diagram.diagramName,
       });
+      if (data && data.ok === false) {
+        setVersions([]);
+        setSelectedVersion('');
+        setMacroStatus(mapPermissionError(data.error || 'Failed to load diagram versions.'));
+        return '';
+      }
       if (data && data.ok && Array.isArray(data.versions)) {
         const ordered = [...data.versions].sort((a, b) => (b.number || 0) - (a.number || 0));
         console.log('FlowMe', 'versions loaded', {
@@ -96,6 +103,7 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
       console.log('FlowMe', 'versions load failed', e && e.message ? e.message : e);
       setVersions([]);
       setSelectedVersion('');
+      setMacroStatus(mapPermissionError(e && e.message ? e.message : 'Failed to load diagram versions.'));
       return '';
     }
   };
@@ -257,7 +265,7 @@ export default function MacroView({ pageId, siteUrl, initialDiagram, isEditing }
       }
     } catch (e) {
       const message = e && e.message ? e.message : 'Failed to load diagram preview.';
-      setMacroStatus(message);
+      setMacroStatus(mapPermissionError(message));
       setSvgUrl('');
       return false;
     }
