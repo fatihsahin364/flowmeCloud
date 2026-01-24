@@ -43,7 +43,7 @@ export default function AdminSettings() {
             secretValue: '',
             timeoutSeconds: stored.timeoutSeconds ? String(stored.timeoutSeconds) : '360',
           });
-          setSecretConfigured(Boolean(stored.secretValue));
+          setSecretConfigured(Boolean(stored.secretConfigured));
         }
       } catch (e) {
         setStatus('Failed to load settings.');

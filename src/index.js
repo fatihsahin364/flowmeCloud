@@ -1132,7 +1132,13 @@ resolver.define('refreshLicenseStatus', async (req) => {
 resolver.define('getConfig', async () => {
   // Return persisted configuration for Custom UI consumers (macro/editor).
   const stored = await storage.get(CONFIG_KEY);
-  return stored || null;
+  if (!stored || typeof stored !== 'object') return null;
+  // Never return secret material to the frontend; only expose a boolean flag.
+  const { secretValue, ...safeConfig } = stored;
+  return {
+    ...safeConfig,
+    secretConfigured: Boolean(secretValue),
+  };
 });
 
 resolver.define('setConfig', async (req) => {
