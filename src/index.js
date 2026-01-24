@@ -1521,8 +1521,9 @@ resolver.define('loadDiagram', async (req) => {
     const xmlName = `${diagramName}${DRAWIO_XML_SUFFIX}`;
     const svgName = `${diagramName}${DRAWIO_SVG_SUFFIX}`;
 
-    const xmlMeta = await getAttachmentByName(pageId, xmlName, 'app');
-    const svgMeta = await getAttachmentByName(pageId, svgName, 'app');
+    // Use the caller's user context so permission checks are enforced.
+    const xmlMeta = await getAttachmentByName(pageId, xmlName, 'user');
+    const svgMeta = await getAttachmentByName(pageId, svgName, 'user');
 
     let xml = '';
     let svg = '';
@@ -1530,11 +1531,11 @@ resolver.define('loadDiagram', async (req) => {
 
     if (xmlMeta && xmlMeta.id) {
       const xmlPageId = xmlMeta.pageId ? String(xmlMeta.pageId) : pageId;
-      xml = await downloadAttachmentByParent(xmlPageId, String(xmlMeta.id), 'app', version);
+      xml = await downloadAttachmentByParent(xmlPageId, String(xmlMeta.id), 'user', version);
     }
     if (svgMeta && svgMeta.id) {
       const svgPageId = svgMeta.pageId ? String(svgMeta.pageId) : pageId;
-      svg = await downloadAttachmentByParent(svgPageId, String(svgMeta.id), 'app', version);
+      svg = await downloadAttachmentByParent(svgPageId, String(svgMeta.id), 'user', version);
       if (version) {
         svgVersion = Number(version);
       } else if (svgMeta.version && typeof svgMeta.version.number === 'number') {
