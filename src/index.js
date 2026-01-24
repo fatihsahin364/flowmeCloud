@@ -1641,15 +1641,16 @@ resolver.define('listDiagramVersions', async (req) => {
       return { ok: false, error: 'Missing pageId or diagramName.' };
     }
 
+    // Use the caller's user context so permission checks are enforced.
     const xmlMeta = await getAttachmentByName(
       pageId,
       `${diagramName}${DRAWIO_XML_SUFFIX}`,
-      'app'
+      'user'
     );
     const svgMeta = await getAttachmentByName(
       pageId,
       `${diagramName}${DRAWIO_SVG_SUFFIX}`,
-      'app'
+      'user'
     );
     const attachmentId = (xmlMeta && xmlMeta.id) || (svgMeta && svgMeta.id) || '';
     if (!attachmentId) {
@@ -1660,7 +1661,7 @@ resolver.define('listDiagramVersions', async (req) => {
     const data = await requestConfluenceJson(
       route`/wiki/api/v2/attachments/${attachmentId}/versions?limit=50`,
       undefined,
-      'app'
+      'user'
     );
     const results = data && Array.isArray(data.results) ? data.results : [];
     const authorIds = new Set();
@@ -1712,7 +1713,7 @@ resolver.define('listDiagramVersions', async (req) => {
           const user = await requestConfluenceJson(
             route`/wiki/rest/api/user?accountId=${accountId}`,
             undefined,
-            'app'
+            'user'
           );
           if (user && user.displayName) {
             authorMap.set(accountId, user.displayName);
