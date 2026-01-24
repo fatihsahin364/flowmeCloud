@@ -1,9 +1,21 @@
 export const DRAWIO_ORIGIN = 'https://embed.diagrams.net';
-export const DRAWIO_URL = `${DRAWIO_ORIGIN}/?embed=1&proto=json&spin=1&ui=min&saveAndExit=1`;
+// Match the Data Center embed experience: show sidebars + full menus instead of the minimal UI.
+const DRAWIO_QUERY =
+  'embed=1&proto=json&spin=1&ui=sidebar&sidebar=1&format=1&lang=en&libs=basic%3Bflowchart%3Bbpmn2%3Bgeneral%3Buml&saveAndExit=1';
+export const DRAWIO_URL = `${DRAWIO_ORIGIN}/?${DRAWIO_QUERY}`;
 
 function decodeBase64(data) {
   try {
-    return atob(data);
+    const binary = atob(data);
+    // draw.io exports UTF-8 in base64; decode bytes to avoid mojibake for symbols like Δ.
+    if (typeof TextDecoder !== 'undefined') {
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return new TextDecoder('utf-8').decode(bytes);
+    }
+    return binary;
   } catch (e) {
     return '';
   }
