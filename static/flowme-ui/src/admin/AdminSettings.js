@@ -36,6 +36,10 @@ export default function AdminSettings() {
     (async () => {
       try {
         const stored = await invoke('getConfig');
+        if (stored && stored.ok === false) {
+          setStatus(stored.error || 'Admin access required.');
+          return;
+        }
         if (stored && typeof stored === 'object') {
           setConfig({
             ...DEFAULT_CONFIG,
@@ -93,7 +97,11 @@ export default function AdminSettings() {
         ...config,
         timeoutSeconds: parseInt(String(config.timeoutSeconds || ''), 10) || 360,
       };
-      await invoke('setConfig', payload);
+      const res = await invoke('setConfig', payload);
+      if (res && res.ok === false) {
+        setStatus(res.error || 'Admin access required.');
+        return;
+      }
       if (payload.secretValue) {
         setSecretConfigured(true);
         setConfig((prev) => ({ ...prev, secretValue: '' }));
@@ -111,6 +119,10 @@ export default function AdminSettings() {
     setLicenseLoading(true);
     try {
       const data = await invoke('refreshLicenseStatus');
+      if (data && data.ok === false) {
+        setStatus(data.error || 'Admin access required.');
+        return;
+      }
       setLicenseStatus(data && data.ok ? data : null);
     } catch (e) {
       setLicenseStatus(null);

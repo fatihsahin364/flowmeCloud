@@ -20,6 +20,12 @@ const AI_MAX_TEXT_CHARS = 20000;
 const AI_MAX_IMAGE_DATA_URL_CHARS = 10000000;
 const AI_JOB_PREFIX = 'flowme.ai.job.';
 const AI_JOB_TTL_MS = 60 * 60 * 1000;
+const ADMIN_GROUP_CANDIDATES = [
+  'confluence-administrators',
+  'site-admins',
+  'admins',
+  'administrators',
+];
 
 const AI_PROMPT_WORKFLOW = [
   'You are a draw.io XML generator.',
@@ -307,6 +313,63 @@ async function getActorInfo() {
   } catch (e) {
     return null;
   }
+}
+
+async function getCurrentUserAccountId(req) {
+  // Prefer the invocation context when present (fast), otherwise fall back to the REST API.
+  const accountId =
+    req && req.context && req.context.accountId ? String(req.context.accountId) : '';
+  if (accountId) return accountId;
+  const actor = await getActorInfo();
+  return actor && actor.accountId ? String(actor.accountId) : '';
+}
+
+function normalizeGroupName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+async function isConfluenceAdmin(accountId) {
+  if (!accountId) return false;
+  try {
+    const data = await requestConfluenceJson(
+      route`/wiki/rest/api/user/memberof?accountId=${accountId}&limit=200`,
+      undefined,
+      'user'
+    );
+    const groups = Array.isArray(data && data.results)
+      ? data.results
+      : Array.isArray(data && data.values)
+      ? data.values
+      : Array.isArray(data && data.results)
+      ? data.results
+      : Array.isArray(data)
+      ? data
+      : [];
+    const candidates = new Set(ADMIN_GROUP_CANDIDATES.map(normalizeGroupName));
+    for (const group of groups) {
+      const name = normalizeGroupName(group && (group.name || group.value || group.id || group.key));
+      if (!name) continue;
+      if (candidates.has(name)) return true;
+      if (name.includes('confluence-admin') || name.includes('site-admin')) return true;
+    }
+  } catch (e) {
+    // If we cannot verify group membership, treat as not admin.
+    return false;
+  }
+  return false;
+}
+
+async function requireConfluenceAdmin(req) {
+  // Guard admin-only settings endpoints to avoid leaking or changing secrets.
+  const accountId = await getCurrentUserAccountId(req);
+  const ok = await isConfluenceAdmin(accountId);
+  if (!ok) {
+    return {
+      ok: false,
+      error: 'Admin access required.',
+    };
+  }
+  return { ok: true };
 }
 
 function fixMojibake(value) {
@@ -1124,13 +1187,21 @@ resolver.define('getLicenseStatus', async (req) => {
 
 resolver.define('refreshLicenseStatus', async (req) => {
   // Clear the grace-period marker so the next check re-evaluates from scratch.
+  const adminCheck = await requireConfluenceAdmin(req);
+  if (!adminCheck.ok) {
+    return adminCheck;
+  }
   await storage.delete(LICENSE_UNLICENSED_SINCE_KEY);
   const contextLicense = req && req.context ? req.context.license : null;
   return resolveLicenseStatus(contextLicense);
 });
 
-resolver.define('getConfig', async () => {
+resolver.define('getConfig', async (req) => {
   // Return persisted configuration for Custom UI consumers (macro/editor).
+  const adminCheck = await requireConfluenceAdmin(req);
+  if (!adminCheck.ok) {
+    return adminCheck;
+  }
   const stored = await storage.get(CONFIG_KEY);
   if (!stored || typeof stored !== 'object') return null;
   // Never return secret material to the frontend; only expose a boolean flag.
@@ -1143,6 +1214,10 @@ resolver.define('getConfig', async () => {
 
 resolver.define('setConfig', async (req) => {
   // Persist configuration from Custom UI.
+  const adminCheck = await requireConfluenceAdmin(req);
+  if (!adminCheck.ok) {
+    return adminCheck;
+  }
   const incoming = req && req.payload ? req.payload : null;
   if (!incoming || typeof incoming !== 'object') {
     return { ok: false, error: 'Invalid configuration payload.' };
