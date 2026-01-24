@@ -197,18 +197,26 @@ async function resolveLicenseStatus(contextLicense) {
   } catch (e) {
     licenseInfo = null;
   }
-  // Log a trimmed license snapshot to help diagnose Marketplace state during dev tests.
-  console.log('FlowMe license raw', {
-    hasLicense: Boolean(licenseInfo),
-    status: licenseInfo ? licenseInfo.status : undefined,
-    type: licenseInfo ? licenseInfo.type : undefined,
-    active: licenseInfo ? licenseInfo.active : undefined,
-    isActive: licenseInfo ? licenseInfo.isActive : undefined,
-    plan: licenseInfo ? licenseInfo.plan : undefined,
-    isTrial: licenseInfo ? licenseInfo.isTrial : undefined,
-    billingPeriod: licenseInfo ? licenseInfo.billingPeriod : undefined,
-    maximumNumberOfUsers: licenseInfo ? licenseInfo.maximumNumberOfUsers : undefined,
-  });
+  // Log a trimmed license snapshot only in non-production environments.
+  try {
+    const ctx = await getAppContext();
+    const envType = ctx && ctx.environment ? String(ctx.environment) : '';
+    if (envType && envType.toLowerCase() !== 'production') {
+      console.log('FlowMe license raw', {
+        hasLicense: Boolean(licenseInfo),
+        status: licenseInfo ? licenseInfo.status : undefined,
+        type: licenseInfo ? licenseInfo.type : undefined,
+        active: licenseInfo ? licenseInfo.active : undefined,
+        isActive: licenseInfo ? licenseInfo.isActive : undefined,
+        plan: licenseInfo ? licenseInfo.plan : undefined,
+        isTrial: licenseInfo ? licenseInfo.isTrial : undefined,
+        billingPeriod: licenseInfo ? licenseInfo.billingPeriod : undefined,
+        maximumNumberOfUsers: licenseInfo ? licenseInfo.maximumNumberOfUsers : undefined,
+      });
+    }
+  } catch (e) {
+    // Ignore logging failures to avoid impacting license checks.
+  }
 
   // Forge license payloads have changed across runtimes, so check the common fields safely.
   const isActive =
