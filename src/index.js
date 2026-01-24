@@ -1583,10 +1583,10 @@ resolver.define('saveDiagram', async (req) => {
 
     const [existingXml, existingSvg] = await Promise.all([
       xml
-        ? getAttachmentByName(pageId, `${diagramName}${DRAWIO_XML_SUFFIX}`, 'app')
+        ? getAttachmentByName(pageId, `${diagramName}${DRAWIO_XML_SUFFIX}`, 'user')
         : Promise.resolve(null),
       svg
-        ? getAttachmentByName(pageId, `${diagramName}${DRAWIO_SVG_SUFFIX}`, 'app')
+        ? getAttachmentByName(pageId, `${diagramName}${DRAWIO_SVG_SUFFIX}`, 'user')
         : Promise.resolve(null),
     ]);
 
@@ -1602,7 +1602,7 @@ resolver.define('saveDiagram', async (req) => {
           `${diagramName}${DRAWIO_XML_SUFFIX}`,
           'application/xml',
           xml,
-          'app',
+          'user',
           existingXml && existingXml.id ? String(existingXml.id) : undefined,
           buildFlowmeComment(diagramName, actor)
         )
@@ -1615,7 +1615,7 @@ resolver.define('saveDiagram', async (req) => {
           `${diagramName}${DRAWIO_SVG_SUFFIX}`,
           'image/svg+xml',
           svg,
-          'app',
+          'user',
           existingSvg && existingSvg.id ? String(existingSvg.id) : undefined,
           buildFlowmeComment(diagramName, actor)
         )
