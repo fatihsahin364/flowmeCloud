@@ -42,14 +42,13 @@ permissions:
     - write:attachment:confluence
     - delete:attachment:confluence
     - write:confluence-file
-
   external:
     fetch:
       backend:
-        - https://embed.diagrams.net
-        - https://api.openai.com
+        - address: https://embed.diagrams.net
+        - address: https://api.openai.com
     frames:
-      - https://embed.diagrams.net
+      - address: https://embed.diagrams.net
 app:
   runtime:
     name: nodejs24.x
